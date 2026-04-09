@@ -273,30 +273,38 @@ df_ind["kelum4"] = pd.cut(
 )
 
 
-# Education level
+# Education level (using r615 - Ijazah/STTB Tertinggi Yang Dimiliki)
+# Grouping: (0,25)=Tidak Tamat SD, (1-5)=SD Sederajat, (6-10)=SMP Sederajat,
+#           (11-17)=SMU Sederajat, (18-24)=Perguruan Tinggi
+# For table: SD-SMP Sederajat = SD + SMP combined
 def recode_ijasah(x):
-    if x in [0, 25]:
-        return "Tidak Tamat SD"
-    elif 1 <= x <= 5:
-        return "SD Sederajat"
-    elif 6 <= x <= 10:
-        return "SMP Sederajat"
-    elif 11 <= x <= 17:
+    if x == 25:  # Tidak Punya Ijazah SD
+        return "Tidak Tamat SD/Tidak atau belum pernah bersekolah"
+    elif 1 <= x <= 10:  # SD Sederajat (1-5) + SMP Sederajat (6-10)
+        return "SD-SMP Sederajat"
+    elif 11 <= x <= 17:  # SMU Sederajat
         return "SMU Sederajat"
-    elif 18 <= x <= 24:
-        return "Perguruan Tinggi"
+    elif 18 <= x <= 24:  # Perguruan Tinggi
+        return "Perguruan Tinggi Sederajat"
     return np.nan
 
 
-df_ind["kelijasah"] = df_ind["r614"].apply(recode_ijasah)
+df_ind["kelijasah"] = df_ind["r615"].apply(recode_ijasah)
 
 # Education order for tables
 educ_order = [
-    "Tidak Tamat SD",
-    "SD Sederajat",
-    "SMP Sederajat",
+    "Tidak Tamat SD/Tidak atau belum pernah bersekolah",
+    "SD-SMP Sederajat",
     "SMU Sederajat",
-    "Perguruan Tinggi",
+    "Perguruan Tinggi Sederajat",
+]
+
+# Education order for tables
+educ_order = [
+    "Tidak Tamat SD/Tidak atau belum pernah bersekolah",
+    "SD-SMP Sederajat",
+    "SMU Sederajat",
+    "Perguruan Tinggi Sederajat",
 ]
 
 # School participation (aps)
@@ -1217,29 +1225,95 @@ write_table(
 )
 
 # ============================================================
-# TABLE 20-22: Education Level by Gender and Poverty (15+)
+# TABLE 20: Education Level by Poverty (Laki-laki, age 15+)
 # ============================================================
 
-ws = get_ws("T20_22_EducLevel")
-sub = df_ind[df_ind["r407"] >= 15].copy()
+ws = get_ws("T20_EducLevel_Male")
+sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
+
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    for educ in educ_order:
-        row = {
-            "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan",
-            "Pendidikan": educ,
-        }
-        for mk in [0, 1]:
-            mask = (
-                (sub["r405"] == sex) & (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
-            )
-            row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
-        result_rows.append(row)
-df_t2022 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin", "Pendidikan"])
+for educ in educ_order:
+    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    for mk in [0, 1]:
+        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t20 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
+# Calculate percentages using helper function
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t20, n_cols, pct_cols, educ_order)
+df_t20 = df_t20[cols_order_mk]
 write_table(
     ws,
-    "Tabel 20-22. Pendidikan Tertinggi (15+) Menurut Jenis Kelamin dan Status Kemiskinan",
-    df_t2022,
+    "Tabel 20. Persentase Penduduk Laki-laki Berumur 15+ Tahun Menurut Status Miskin dan Pendidikan Tertinggi Yang Ditamatkan",
+    df_t20,
+)
+
+# ============================================================
+# TABLE 21: Education Level by Poverty (Perempuan, age 15+)
+# ============================================================
+
+ws = get_ws("T21_EducLevel_Female")
+sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
+
+result_rows = []
+for educ in educ_order:
+    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    for mk in [0, 1]:
+        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t21 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
+# Calculate percentages using helper function
+calc_pct_ensure_100(df_t21, n_cols, pct_cols, educ_order)
+df_t21 = df_t21[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 21. Persentase Penduduk Perempuan Berumur 15+ Tahun Menurut Status Miskin dan Pendidikan Tertinggi Yang Ditamatkan",
+    df_t21,
+)
+
+# ============================================================
+# TABLE 22: Education Level by Poverty (Total, age 15+)
+# ============================================================
+
+ws = get_ws("T22_EducLevel_Total")
+sub = df_ind[df_ind["r407"] >= 15].copy()
+
+result_rows = []
+for educ in educ_order:
+    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    for mk in [0, 1]:
+        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t22 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
+# Calculate percentages using helper function
+calc_pct_ensure_100(df_t22, n_cols, pct_cols, educ_order)
+df_t22 = df_t22[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 22. Persentase Penduduk Berumur 15+ Tahun Menurut Status Miskin dan Pendidikan Tertinggi Yang Ditamatkan",
+    df_t22,
 )
 
 # ============================================================
