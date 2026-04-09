@@ -1,0 +1,11 @@
+[project]
+name = "susenas-script"
+version = "0.1.0"
+description = "Poverty Profile Analysis - Susenas March 2024"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pyreadstat",
+    "openpyxl",
+]

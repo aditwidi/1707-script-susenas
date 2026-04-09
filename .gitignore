@@ -1,2 +1,11 @@
 #data
 /data
+
+.venv
+.ruff_cache
+
+#output
+/output
+
+#claude
+.claude

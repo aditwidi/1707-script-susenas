@@ -8,7 +8,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import pyreadstat
+import simpledbf
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -18,24 +18,13 @@ warnings.filterwarnings("ignore")
 # ============================================================
 # CONFIG - Update these paths to match your environment
 # ============================================================
-PATH_KP43 = (
-    r"D:\bps_lebong\2025\Publikasi\Profil Kemiskinan 2024\72_ssn_202403_kp43.sav"
-)
-PATH_IND = (
-    r"D:\bps_lebong\2025\Publikasi\Profil Kemiskinan 2024\72_ssn_202403_kor_ind.sav"
-)
-PATH_RT = (
-    r"D:\bps_lebong\2025\Publikasi\Profil Kemiskinan 2024\72_ssn_202403_kor_rt.sav"
-)
-PATH_KP41 = (
-    r"D:\bps_lebong\2025\Publikasi\Profil Kemiskinan 2024\72_ssn_202403_kor_kp41.sav"
-)
-PATH_KP42 = (
-    r"D:\bps_lebong\2025\Publikasi\Profil Kemiskinan 2024\72_ssn_202403_kor_kp42.sav"
-)
-OUTPUT = (
-    r"D:\bps_lebong\2025\Publikasi\Profil Kemiskinan 2024\Poverty_Profile_Tables.xlsx"
-)
+PATH_KP43 = "data/2026/1707-ssn202503-kp-blok43.dbf"
+PATH_IND_1 = "data/2026/1707-ssn202503-kor-ind-1.dbf"
+PATH_IND_2 = "data/2026/1707-ssn202503-kor-ind-2.dbf"
+PATH_RT = "data/2026/1707-ssn202503-kor-rt.dbf"
+PATH_KP41 = "data/2026/1707-ssn202503-kp-blok41.dbf"
+PATH_KP42 = "data/2026/1707-ssn202503-kp-blok42.dbf"
+OUTPUT = "output/Poverty_Profile_Tables.xlsx"
 
 # Poverty parameters for r102=7 (Lebong)
 FK_VALUE = 0.86987940631734
@@ -156,13 +145,21 @@ def write_table(ws, title, df, start_row=1):
 # ============================================================
 
 print("Loading datasets...")
-df_kp43, meta_kp43 = pyreadstat.read_sav(PATH_KP43)
-df_ind, meta_ind = pyreadstat.read_sav(PATH_IND)
-df_rt, meta_rt = pyreadstat.read_sav(PATH_RT)
+df_kp43 = simpledbf.Dbf5(PATH_KP43).to_dataframe()
+df_ind_1 = simpledbf.Dbf5(PATH_IND_1).to_dataframe()
+df_ind_2 = simpledbf.Dbf5(PATH_IND_2).to_dataframe()
+df_rt = simpledbf.Dbf5(PATH_RT).to_dataframe()
 
-# Lowercase all column names
-for df in [df_kp43, df_ind, df_rt]:
+# Lowercase all column names first
+for df in [df_kp43, df_ind_1, df_ind_2, df_rt]:
     df.columns = df.columns.str.lower()
+
+# Merge IND files horizontally (split due to DBF column limit)
+# Drop duplicate common columns from IND-2 except merge keys
+merge_keys = ['urut', 'r401']
+common_cols = ['psu', 'ssu', 'strata', 'r101', 'r102', 'r105', 'fwt']
+df_ind_2_unique = df_ind_2.drop(columns=[c for c in common_cols if c in df_ind_2.columns])
+df_ind = pd.merge(df_ind_1, df_ind_2_unique, on=merge_keys, how='inner')
 
 # ============================================================
 # SECTION 1: POVERTY VARIABLES (kp43 file)
@@ -216,6 +213,22 @@ df_kp43["sharenonfoodkapita"] = df_kp43["nonfoodkapita"] / df_kp43["kapita"] * 1
 df_kp43["dmkako"] = np.where(df_kp43["mkako"] == 1, 100, 0)
 
 # ============================================================
+# MERGE POVERTY STATUS TO IND AND RT FILES
+# ============================================================
+
+print("Merging poverty status to individual and household files...")
+
+# Columns to merge from kp43
+poverty_cols = ["urut", "mkako", "dmkako", "p1kako", "p2kako", "nkapita", "kapita", "kapitafk", "gkkako", "weind",
+                "foodkapita", "nonfoodkapita", "sharefoodkapita", "sharenonfoodkapita"]
+
+# Merge to df_ind (individuals)
+df_ind = pd.merge(df_ind, df_kp43[poverty_cols], on="urut", how="left")
+
+# Merge to df_rt (households)
+df_rt = pd.merge(df_rt, df_kp43[poverty_cols], on="urut", how="left")
+
+# ============================================================
 # SECTION 2: INDIVIDUAL VARIABLES (ind file)
 # ============================================================
 
@@ -256,12 +269,12 @@ df_ind["kelijasah"] = df_ind["r614"].apply(recode_ijasah)
 # School participation (aps)
 df_ind["aps"] = np.where(df_ind["r610"] == 2, 100, 0)
 
-# Literacy (amh)
+# Literacy (amh) - moved from r607/r608/r609 to r608/r609/r610
 df_ind["amh"] = np.where(
-    (df_ind["r607"] == 1) | (df_ind["r608"] == 1) | (df_ind["r609"] == 1),
+    (df_ind["r608"] == 1) | (df_ind["r609"] == 1) | (df_ind["r610"] == 1),
     100,
     np.where(
-        (df_ind["r607"] == 5) & (df_ind["r608"] == 5) & (df_ind["r609"] == 5), 0, np.nan
+        (df_ind["r608"] == 5) & (df_ind["r609"] == 5) & (df_ind["r610"] == 5), 0, np.nan
     ),
 )
 
@@ -327,24 +340,23 @@ df_ind["keljart"] = df_ind["r301"].apply(recode_jart)
 
 print("Computing household variables...")
 
-# Proper sanitation
+# Proper sanitation (moved from r1809 to r1609)
 df_rt["sal"] = 0
-mask1 = (df_rt["r1809a"] <= 3) & (df_rt["r1809b"] == 1) & (df_rt["r1809c"] <= 2)
+mask1 = (df_rt["r1609a"] <= 3) & (df_rt["r1609b"] == 1) & (df_rt["r1609c"] <= 2)
 mask2 = (
-    (df_rt["r1809a"] <= 3)
-    & (df_rt["r1809b"] == 1)
-    & (df_rt["r1809c"] == 4)
+    (df_rt["r1609a"] <= 3)
+    & (df_rt["r1609b"] == 1)
+    & (df_rt["r1609c"] == 4)
     & (df_rt["r105"] == 2)
 )
 df_rt.loc[mask1 | mask2, "sal"] = 100
 
 
-# Clean drinking water
+# Clean drinking water (moved from r1810 to r1610)
 def calc_airmlayak(row):
     good_src = {3, 4, 5, 7, 10}
     bad_src = {1, 2}
-    other_src = {6, 8, 9, 11}
-    a, b = row.get("r1810a"), row.get("r1814a")
+    a, b = row.get("r1610a"), row.get("r1614a")
     if a in good_src:
         return 100
     if a in bad_src and b in good_src:
@@ -354,19 +366,19 @@ def calc_airmlayak(row):
 
 df_rt["airmlayak"] = df_rt.apply(calc_airmlayak, axis=1)
 
-# Clean water (sab)
+# Clean water (sab) (moved from r1810 to r1610)
 df_rt["sab"] = 0
-df_rt.loc[df_rt["r1810a"].isin([1, 2, 3]), "sab"] = 100
-df_rt.loc[(df_rt["r1810a"].isin([4, 5, 7])) & (df_rt["r1810c"] == 2), "sab"] = 100
+df_rt.loc[df_rt["r1610a"].isin([1, 2, 3]), "sab"] = 100
+df_rt.loc[(df_rt["r1610a"].isin([4, 5, 7])) & (df_rt["r1610c"] == 2), "sab"] = 100
 
-# Floor area per capita
-df_rt["lkapita"] = df_rt["r1804"] / df_rt["r301"]
+# Floor area per capita (moved from r1804 to r1604)
+df_rt["lkapita"] = df_rt["r1604"] / df_rt["r301"]
 df_rt["klkapita"] = pd.cut(
     df_rt["lkapita"], bins=[-1, 7.2, 9999], labels=["<=7,2 m2", ">7,2 m2"]
 )
 
 
-# Roof type
+# Roof type (moved from r1806a to r1606)
 def recode_atap(x):
     if x in [1, 2]:
         return "Beton/Genteng"
@@ -378,10 +390,10 @@ def recode_atap(x):
         return "Bambu/kayu/jerami/lainnya"
 
 
-df_rt["katap"] = df_rt["r1806a"].apply(recode_atap)
+df_rt["katap"] = df_rt["r1606"].apply(recode_atap)
 
 
-# Wall type
+# Wall type (moved from r1807 to r1607)
 def recode_dinding(x):
     if x == 1:
         return "Tembok"
@@ -393,10 +405,10 @@ def recode_dinding(x):
         return "Lainnya"
 
 
-df_rt["kdinding"] = df_rt["r1807"].apply(recode_dinding)
+df_rt["kdinding"] = df_rt["r1607"].apply(recode_dinding)
 
 
-# Floor type
+# Floor type (moved from r1808 to r1608)
 def recode_lantai(x):
     if 1 <= x <= 3:
         return "Marmer/Granit/Keramik/Parket/Vinil/Karpet"
@@ -408,10 +420,10 @@ def recode_lantai(x):
         return "Semen/Bata/Bambu/Tanah/Lainnya"
 
 
-df_rt["klantai"] = df_rt["r1808"].apply(recode_lantai)
+df_rt["klantai"] = df_rt["r1608"].apply(recode_lantai)
 
 
-# Electricity
+# Electricity (moved from r1816 to r1616)
 def recode_listrik(x):
     if x in [1, 2]:
         return "Listrik PLN"
@@ -422,7 +434,7 @@ def recode_listrik(x):
     return np.nan
 
 
-df_rt["klistrik"] = df_rt["r1816"].apply(recode_listrik)
+df_rt["klistrik"] = df_rt["r1616"].apply(recode_listrik)
 
 # ============================================================
 # BUILD EXCEL WORKBOOK
@@ -504,67 +516,251 @@ for sex_val in sorted(sub["r405"].dropna().unique()):
         grp = sub[(sub["r405"] == sex_val) & (sub["mkako"] == mk_val)]
         row[f"N (mkako={int(mk_val)})"] = round(grp["fwt"].sum(), 0)
     result_rows.append(row)
+# Add Total row
+total_row = {"Jenis Kelamin": "Total"}
+for mk_val in [0, 1]:
+    grp = sub[sub["mkako"] == mk_val]
+    total_row[f"N (mkako={int(mk_val)})"] = round(grp["fwt"].sum(), 0)
+result_rows.append(total_row)
 df_t2 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
-# Add column pct
-for col in df_t2.columns:
-    total = df_t2[col].sum()
-    df_t2[col.replace("N ", "% ")] = (df_t2[col] / total * 100).round(2)
+# Calculate percentages (column-wise: distribution of gender within each poverty status)
+for mk_val in [0, 1]:
+    n_col = f"N (mkako={mk_val})"
+    total_n = df_t2.loc["Total", n_col]
+    pct_col = f"% (mkako={mk_val})"
+    for idx in df_t2.index:
+        if total_n > 0:
+            df_t2.loc[idx, pct_col] = round(df_t2.loc[idx, n_col] / total_n * 100, 2)
 write_table(ws, "Tabel 2. Penduduk Menurut Jenis Kelamin dan Status Kemiskinan", df_t2)
 
 # ============================================================
-# TABLE 3-5: Age Group by Gender and Poverty
+# TABLE 3: Age Group by Poverty (Laki-laki)
 # ============================================================
 
-ws = get_ws("T3_5_AgeGroup")
+ws = get_ws("T3_AgeGroup_Male")
+sub = df_ind[df_ind["r405"] == 1].copy()  # Laki-laki
 result_rows = []
-for sex_val in sorted(df_ind["r405"].dropna().unique()):
-    for age_grp in ["0-14", "15-64", "65+"]:
-        row = {
-            "Jenis Kelamin": "Laki-laki" if sex_val == 1 else "Perempuan",
-            "Kelompok Umur": age_grp,
-        }
-        for mk_val in [0, 1]:
-            mask = (
-                (df_ind["r405"] == sex_val)
-                & (df_ind["kelum1"].astype(str) == age_grp)
-                & (df_ind["mkako"] == mk_val)
-            )
-            row[f"N mkako={int(mk_val)}"] = round(df_ind.loc[mask, "fwt"].sum(), 0)
-        result_rows.append(row)
-df_t35 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin", "Kelompok Umur"])
-write_table(
-    ws,
-    "Tabel 3-5. Penduduk Menurut Kelompok Umur, Jenis Kelamin dan Status Kemiskinan",
-    df_t35,
-)
+for age_grp in ["0-14", "15-64", "65+"]:
+    row = {"Kelompok Umur": age_grp}
+    for mk_val in [0, 1]:
+        mask = (sub["kelum1"].astype(str) == age_grp) & (sub["mkako"] == mk_val)
+        row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Kelompok Umur": "Total"}
+for mk_val in [0, 1]:
+    mask = sub["mkako"] == mk_val
+    total_row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t3 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+# Calculate percentages (column-wise: distribution of age groups within each poverty status)
+for mk_val in [0, 1]:
+    n_col = f"N mkako={mk_val}"
+    total_n = df_t3.loc["Total", n_col]
+    pct_col = f"% mkako={mk_val}"
+    for idx in df_t3.index:
+        if total_n > 0:
+            df_t3.loc[idx, pct_col] = round(df_t3.loc[idx, n_col] / total_n * 100, 2)
+write_table(ws, "Tabel 3. Persentase Penduduk Laki-laki Menurut Kelompok Umur dan Status Kemiskinan", df_t3)
 
 # ============================================================
-# TABLE 6-8: Marital Status x Age Group x Gender x Poverty
+# TABLE 4: Age Group by Poverty (Perempuan)
 # ============================================================
 
-ws = get_ws("T6_8_Education")
-sub = df_ind[df_ind["r407"] >= 10].copy()
+ws = get_ws("T4_AgeGroup_Female")
+sub = df_ind[df_ind["r405"] == 2].copy()  # Perempuan
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    for age_grp in ["10-18", ">18"]:
-        row = {
-            "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan",
-            "Kelompok Umur": age_grp,
-        }
+for age_grp in ["0-14", "15-64", "65+"]:
+    row = {"Kelompok Umur": age_grp}
+    for mk_val in [0, 1]:
+        mask = (sub["kelum1"].astype(str) == age_grp) & (sub["mkako"] == mk_val)
+        row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Kelompok Umur": "Total"}
+for mk_val in [0, 1]:
+    mask = sub["mkako"] == mk_val
+    total_row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t4 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+# Calculate percentages (column-wise: distribution of age groups within each poverty status)
+for mk_val in [0, 1]:
+    n_col = f"N mkako={mk_val}"
+    total_n = df_t4.loc["Total", n_col]
+    pct_col = f"% mkako={mk_val}"
+    for idx in df_t4.index:
+        if total_n > 0:
+            df_t4.loc[idx, pct_col] = round(df_t4.loc[idx, n_col] / total_n * 100, 2)
+write_table(ws, "Tabel 4. Persentase Penduduk Perempuan Menurut Kelompok Umur dan Status Kemiskinan", df_t4)
+
+# ============================================================
+# TABLE 5: Age Group by Poverty (Total)
+# ============================================================
+
+ws = get_ws("T5_AgeGroup_Total")
+sub = df_ind.copy()  # All genders
+result_rows = []
+for age_grp in ["0-14", "15-64", "65+"]:
+    row = {"Kelompok Umur": age_grp}
+    for mk_val in [0, 1]:
+        mask = (sub["kelum1"].astype(str) == age_grp) & (sub["mkako"] == mk_val)
+        row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Kelompok Umur": "Total"}
+for mk_val in [0, 1]:
+    mask = sub["mkako"] == mk_val
+    total_row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t5 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+# Calculate percentages (column-wise: distribution of age groups within each poverty status)
+for mk_val in [0, 1]:
+    n_col = f"N mkako={mk_val}"
+    total_n = df_t5.loc["Total", n_col]
+    pct_col = f"% mkako={mk_val}"
+    for idx in df_t5.index:
+        if total_n > 0:
+            df_t5.loc[idx, pct_col] = round(df_t5.loc[idx, n_col] / total_n * 100, 2)
+write_table(ws, "Tabel 5. Persentase Penduduk Menurut Kelompok Umur dan Status Kemiskinan", df_t5)
+
+# ============================================================
+# TABLE 6: Marital Status x Age Group by Poverty (Laki-laki, age >= 10)
+# ============================================================
+
+ws = get_ws("T6_MaritalStatus_Male")
+sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 10)].copy()  # Laki-laki, age >= 10
+
+marital_labels = {1: "Belum Kawin", 2: "Kawin", 3: "Cerai Hidup", 4: "Cerai Mati"}
+age_groups = ["10-18", ">18"]
+
+result_rows = []
+for marital_val in [1, 2, 3, 4]:
+    marital_label = marital_labels[marital_val]
+    for age_grp in age_groups:
+        row = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
         for mk in [0, 1]:
             mask = (
-                (sub["r405"] == sex)
+                (sub["r404"] == marital_val)
                 & (sub["kelum2"].astype(str) == age_grp)
                 & (sub["mkako"] == mk)
             )
-            row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+            row[f"% mkako={mk}"] = 0  # Will calculate later
+            row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
         result_rows.append(row)
-df_t68 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin", "Kelompok Umur"])
-write_table(
-    ws,
-    "Tabel 6-8. Penduduk 10+ Menurut Kelompok Umur, Jenis Kelamin, dan Status Kemiskinan",
-    df_t68,
-)
+
+# Calculate percentages within each marital status for each poverty column
+for marital_val in [1, 2, 3, 4]:
+    marital_label = marital_labels[marital_val]
+    for mk in [0, 1]:
+        # Sum of this marital status for this poverty status
+        total_marital_mk = sum(
+            r[f"N mkako={mk}"] for r in result_rows if r["Status Perkawinan"] == marital_label
+        )
+        # Calculate percentages
+        for r in result_rows:
+            if r["Status Perkawinan"] == marital_label and total_marital_mk > 0:
+                r[f"% mkako={mk}"] = round(r[f"N mkako={mk}"] / total_marital_mk * 100, 2)
+
+# Add single Total row showing 100 for each column
+total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+for mk in [0, 1]:
+    total_row[f"% mkako={mk}"] = 100.00
+    total_row[f"N mkako={mk}"] = ""
+result_rows.append(total_row)
+
+df_t6 = pd.DataFrame(result_rows)
+# Reorder columns
+cols_order = ["Status Perkawinan", "Kelompok Umur", "% mkako=1", "% mkako=0"]
+df_t6 = df_t6[cols_order]
+write_table(ws, "Tabel 6. Persentase Penduduk Laki-laki Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan", df_t6)
+
+# ============================================================
+# TABLE 7: Marital Status x Age Group by Poverty (Perempuan, age >= 10)
+# ============================================================
+
+ws = get_ws("T7_MaritalStatus_Female")
+sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 10)].copy()  # Perempuan, age >= 10
+
+result_rows = []
+for marital_val in [1, 2, 3, 4]:
+    marital_label = marital_labels[marital_val]
+    for age_grp in age_groups:
+        row = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        for mk in [0, 1]:
+            mask = (
+                (sub["r404"] == marital_val)
+                & (sub["kelum2"].astype(str) == age_grp)
+                & (sub["mkako"] == mk)
+            )
+            row[f"% mkako={mk}"] = 0
+            row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+        result_rows.append(row)
+
+# Calculate percentages within each marital status
+for marital_val in [1, 2, 3, 4]:
+    marital_label = marital_labels[marital_val]
+    for mk in [0, 1]:
+        total_marital_mk = sum(
+            r[f"N mkako={mk}"] for r in result_rows if r["Status Perkawinan"] == marital_label
+        )
+        for r in result_rows:
+            if r["Status Perkawinan"] == marital_label and total_marital_mk > 0:
+                r[f"% mkako={mk}"] = round(r[f"N mkako={mk}"] / total_marital_mk * 100, 2)
+
+# Add single Total row showing 100 for each column
+total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+for mk in [0, 1]:
+    total_row[f"% mkako={mk}"] = 100.00
+    total_row[f"N mkako={mk}"] = ""
+result_rows.append(total_row)
+
+df_t7 = pd.DataFrame(result_rows)
+df_t7 = df_t7[cols_order]
+write_table(ws, "Tabel 7. Persentase Penduduk Perempuan Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan", df_t7)
+
+# ============================================================
+# TABLE 8: Marital Status x Age Group by Poverty (Total, age >= 10)
+# ============================================================
+
+ws = get_ws("T8_MaritalStatus_Total")
+sub = df_ind[df_ind["r407"] >= 10].copy()  # All genders, age >= 10
+
+result_rows = []
+for marital_val in [1, 2, 3, 4]:
+    marital_label = marital_labels[marital_val]
+    for age_grp in age_groups:
+        row = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        for mk in [0, 1]:
+            mask = (
+                (sub["r404"] == marital_val)
+                & (sub["kelum2"].astype(str) == age_grp)
+                & (sub["mkako"] == mk)
+            )
+            row[f"% mkako={mk}"] = 0
+            row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+        result_rows.append(row)
+
+# Calculate percentages within each marital status
+for marital_val in [1, 2, 3, 4]:
+    marital_label = marital_labels[marital_val]
+    for mk in [0, 1]:
+        total_marital_mk = sum(
+            r[f"N mkako={mk}"] for r in result_rows if r["Status Perkawinan"] == marital_label
+        )
+        for r in result_rows:
+            if r["Status Perkawinan"] == marital_label and total_marital_mk > 0:
+                r[f"% mkako={mk}"] = round(r[f"N mkako={mk}"] / total_marital_mk * 100, 2)
+
+# Add single Total row showing 100 for each column
+total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+for mk in [0, 1]:
+    total_row[f"% mkako={mk}"] = 100.00
+    total_row[f"N mkako={mk}"] = ""
+result_rows.append(total_row)
+
+df_t8 = pd.DataFrame(result_rows)
+df_t8 = df_t8[cols_order]
+write_table(ws, "Tabel 8. Persentase Penduduk Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan", df_t8)
 
 # ============================================================
 # TABLE 9: Household Head Gender by Poverty
@@ -574,18 +770,42 @@ ws = get_ws("T9_HHHead_Gender")
 sub = df_ind[df_ind["r403"] == 1].copy()
 result_rows = []
 for sex in sorted(sub["r405"].dropna().unique()):
-    row = {"Jenis Kelamin KRT": "Laki-laki" if sex == 1 else "Perempuan"}
+    row = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
     for mk in [0, 1]:
         mask = (sub["r405"] == sex) & (sub["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t9 = pd.DataFrame(result_rows).set_index("Jenis Kelamin KRT")
-for col in df_t9.columns:
-    total = df_t9[col].sum()
-    df_t9[col.replace("N ", "% ")] = (df_t9[col] / total * 100).round(2)
+# Add Total row
+total_row = {"Jenis Kelamin": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t9 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
+# Calculate percentages (column-wise) and ensure they sum to 100
+for mk in [0, 1]:
+    n_col = f"N mkako={mk}"
+    pct_col = f"% mkako={mk}"
+    total_n = df_t9.loc["Total", n_col]
+    if total_n > 0:
+        # Calculate percentages for non-Total rows
+        pct_sum = 0
+        non_total_indices = [idx for idx in df_t9.index if idx != "Total"]
+        for idx in non_total_indices[:-1]:  # All except last and Total
+            pct = round(df_t9.loc[idx, n_col] / total_n * 100, 2)
+            df_t9.loc[idx, pct_col] = pct
+            pct_sum += pct
+        # Last non-Total row: make it sum to 100
+        last_idx = non_total_indices[-1]
+        df_t9.loc[last_idx, pct_col] = round(100 - pct_sum, 2)
+        # Total row
+        df_t9.loc["Total", pct_col] = 100.00
+# Reorder columns: Miskin (mkako=1) first, then Tidak Miskin (mkako=0)
+cols_order = ["N mkako=1", "N mkako=0", "% mkako=1", "% mkako=0"]
+df_t9 = df_t9[cols_order]
 write_table(
     ws,
-    "Tabel 9. Kepala Rumah Tangga Menurut Jenis Kelamin dan Status Kemiskinan",
+    "Tabel 9. Persentase Kepala Rumah Tangga Menurut Status Miskin dan Jenis Kelamin",
     df_t9,
 )
 
@@ -931,22 +1151,22 @@ write_table(
 )
 
 # ============================================================
-# TABLE 45: Land Ownership (r1802) by Poverty
+# TABLE 45: Land Ownership (r1602) by Poverty
 # ============================================================
 
 ws = get_ws("T45_LandOwnership")
 result_rows = []
-for r1802_val in sorted(df_rt["r1802"].dropna().unique()):
-    row = {"Status Penguasaan Tanah": int(r1802_val)}
+for r1602_val in sorted(df_rt["r1602"].dropna().unique()):
+    row = {"Status Penguasaan Bangunan": int(r1602_val)}
     for mk in [0, 1]:
-        mask = (df_rt["r1802"] == r1802_val) & (df_rt["mkako"] == mk)
+        mask = (df_rt["r1602"] == r1602_val) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t45 = pd.DataFrame(result_rows).set_index("Status Penguasaan Tanah")
+df_t45 = pd.DataFrame(result_rows).set_index("Status Penguasaan Bangunan")
 for col in df_t45.columns:
     total = df_t45[col].sum()
     df_t45[col.replace("N ", "% ")] = (df_t45[col] / total * 100).round(2)
-write_table(ws, "Tabel 45. Penguasaan Tanah Menurut Status Kemiskinan", df_t45)
+write_table(ws, "Tabel 45. Penguasaan Bangunan Menurut Status Kemiskinan", df_t45)
 
 # ============================================================
 # TABLE 46: Floor Area per Capita by Poverty
@@ -1141,42 +1361,42 @@ write_table(
 )
 
 # ============================================================
-# TABLE 56: Land Certificate (r2203) by Poverty
+# TABLE 56: PKH Recipient (r2002) by Poverty
 # ============================================================
 
-ws = get_ws("T56_LandCert")
+ws = get_ws("T56_PKH")
 result_rows = []
-for cert_val in sorted(df_rt["r2203"].dropna().unique()):
-    row = {"Status Sertifikat Tanah": int(cert_val)}
+for r2002_val in sorted(df_rt["r2002"].dropna().unique()):
+    row = {"Penerima PKH": int(r2002_val)}
     for mk in [0, 1]:
-        mask = (df_rt["r2203"] == cert_val) & (df_rt["mkako"] == mk)
+        mask = (df_rt["r2002"] == r2002_val) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t56 = pd.DataFrame(result_rows).set_index("Status Sertifikat Tanah")
+df_t56 = pd.DataFrame(result_rows).set_index("Penerima PKH")
 for col in df_t56.columns:
     total = df_t56[col].sum()
     df_t56[col.replace("N ", "% ")] = (df_t56[col] / total * 100).round(2)
 write_table(
-    ws, "Tabel 56. Kepemilikan Sertifikat Tanah Menurut Status Kemiskinan", df_t56
+    ws, "Tabel 56. Penerima PKH Menurut Status Kemiskinan", df_t56
 )
 
 # ============================================================
-# TABLE 57: Livestock/Assets (r2207) by Poverty
+# TABLE 57: BPNT/Sembako Recipient (r2005) by Poverty
 # ============================================================
 
-ws = get_ws("T57_Livestock")
+ws = get_ws("T57_BPNT")
 result_rows = []
-for lv_val in sorted(df_rt["r2207"].dropna().unique()):
-    row = {"Kepemilikan Ternak/Aset": int(lv_val)}
+for r2005_val in sorted(df_rt["r2005"].dropna().unique()):
+    row = {"Penerima BPNT/Sembako": int(r2005_val)}
     for mk in [0, 1]:
-        mask = (df_rt["r2207"] == lv_val) & (df_rt["mkako"] == mk)
+        mask = (df_rt["r2005"] == r2005_val) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t57 = pd.DataFrame(result_rows).set_index("Kepemilikan Ternak/Aset")
+df_t57 = pd.DataFrame(result_rows).set_index("Penerima BPNT/Sembako")
 for col in df_t57.columns:
     total = df_t57[col].sum()
     df_t57[col.replace("N ", "% ")] = (df_t57[col] / total * 100).round(2)
-write_table(ws, "Tabel 57. Kepemilikan Ternak/Aset Menurut Status Kemiskinan", df_t57)
+write_table(ws, "Tabel 57. Penerima BPNT/Sembako Menurut Status Kemiskinan", df_t57)
 
 # ============================================================
 # TABLE 58-59: APS with Standard Error (Complex Sample Approximation)
