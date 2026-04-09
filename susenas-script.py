@@ -307,8 +307,8 @@ educ_order = [
     "Perguruan Tinggi Sederajat",
 ]
 
-# School participation (aps)
-df_ind["aps"] = np.where(df_ind["r610"] == 2, 100, 0)
+# School participation (aps) - using r611 = 2 (Masih bersekolah)
+df_ind["aps"] = np.where(df_ind["r611"] == 2, 100, 0)
 
 # Literacy (amh) - moved from r607/r608/r609 to r608/r609/r610
 df_ind["amh"] = np.where(
@@ -1317,65 +1317,170 @@ write_table(
 )
 
 # ============================================================
-# TABLE 23-25: School Participation Rate (APS) by Age Group and Poverty
+# TABLE 23: School Participation Rate (APS) by Age Group and Poverty (Laki-laki, age 7-18)
 # ============================================================
 
-ws = get_ws("T23_25_APS")
-sub = df_ind[(df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+ws = get_ws("T23_APS_Male")
+sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+age_groups_aps = ["7-12", "13-15", "16-18"]
+
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    for age_grp in ["7-12", "13-15", "16-18"]:
-        row = {
-            "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan",
-            "Kelompok Umur": age_grp,
-        }
-        for mk in [0, 1]:
-            mask = (
-                (sub["r405"] == sex)
-                & (sub["kelum4"].astype(str) == age_grp)
-                & (sub["mkako"] == mk)
-            )
-            grp = sub[mask]
-            row[f"APS mkako={int(mk)}"] = (
-                round(weighted_mean(grp["aps"], grp["fwt"]), 2)
-                if mask.sum() > 0
-                else np.nan
-            )
-        result_rows.append(row)
-df_t2325 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin", "Kelompok Umur"])
+for age_grp in age_groups_aps:
+    row = {"Kelompok Umur": age_grp}
+    for mk in [0, 1]:
+        mask = (sub["kelum4"].astype(str) == age_grp) & (sub["mkako"] == mk)
+        grp = sub[mask]
+        if len(grp) > 0:
+            row[f"APS mkako={mk}"] = round(weighted_mean(grp["aps"], grp["fwt"]), 2)
+        else:
+            row[f"APS mkako={mk}"] = np.nan
+    result_rows.append(row)
+
+df_t23 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+# Reorder columns: Miskin first
+cols_order_aps = ["APS mkako=1", "APS mkako=0"]
+df_t23 = df_t23[cols_order_aps]
 write_table(
     ws,
-    "Tabel 23-25. Angka Partisipasi Sekolah (7-18 th) Menurut Jenis Kelamin dan Status Kemiskinan",
-    df_t2325,
+    "Tabel 23. Angka Partisipasi Sekolah (APS) Penduduk Laki-laki Berumur 7-18 Tahun Menurut Status Miskin",
+    df_t23,
 )
 
 # ============================================================
-# TABLE 26-28: Literacy Rate (AMH) by Gender and Poverty
+# TABLE 24: School Participation Rate (APS) by Age Group and Poverty (Perempuan, age 7-18)
 # ============================================================
 
-ws = get_ws("T26_28_AMH")
+ws = get_ws("T24_APS_Female")
+sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+
 result_rows = []
-for age_range, lo, hi in [("15-24", 15, 24), ("15-55", 15, 55)]:
-    sub = df_ind[(df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
-    for sex in sorted(sub["r405"].dropna().unique()):
-        row = {
-            "Kelompok Umur": age_range,
-            "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan",
-        }
-        for mk in [0, 1]:
-            mask = (sub["r405"] == sex) & (sub["mkako"] == mk)
-            grp = sub[mask]
-            row[f"AMH mkako={int(mk)}"] = (
-                round(weighted_mean(grp["amh"], grp["fwt"]), 2)
-                if mask.sum() > 0
-                else np.nan
-            )
-        result_rows.append(row)
-df_t2628 = pd.DataFrame(result_rows).set_index(["Kelompok Umur", "Jenis Kelamin"])
+for age_grp in age_groups_aps:
+    row = {"Kelompok Umur": age_grp}
+    for mk in [0, 1]:
+        mask = (sub["kelum4"].astype(str) == age_grp) & (sub["mkako"] == mk)
+        grp = sub[mask]
+        if len(grp) > 0:
+            row[f"APS mkako={mk}"] = round(weighted_mean(grp["aps"], grp["fwt"]), 2)
+        else:
+            row[f"APS mkako={mk}"] = np.nan
+    result_rows.append(row)
+
+df_t24 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+df_t24 = df_t24[cols_order_aps]
 write_table(
     ws,
-    "Tabel 26-28. Angka Melek Huruf Menurut Jenis Kelamin dan Status Kemiskinan",
-    df_t2628,
+    "Tabel 24. Angka Partisipasi Sekolah (APS) Penduduk Perempuan Berumur 7-18 Tahun Menurut Status Miskin",
+    df_t24,
+)
+
+# ============================================================
+# TABLE 25: School Participation Rate (APS) by Age Group and Poverty (Total, age 7-18)
+# ============================================================
+
+ws = get_ws("T25_APS_Total")
+sub = df_ind[(df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+
+result_rows = []
+for age_grp in age_groups_aps:
+    row = {"Kelompok Umur": age_grp}
+    for mk in [0, 1]:
+        mask = (sub["kelum4"].astype(str) == age_grp) & (sub["mkako"] == mk)
+        grp = sub[mask]
+        if len(grp) > 0:
+            row[f"APS mkako={mk}"] = round(weighted_mean(grp["aps"], grp["fwt"]), 2)
+        else:
+            row[f"APS mkako={mk}"] = np.nan
+    result_rows.append(row)
+
+df_t25 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+df_t25 = df_t25[cols_order_aps]
+write_table(
+    ws,
+    "Tabel 25. Angka Partisipasi Sekolah (APS) Penduduk Berumur 7-18 Tahun Menurut Status Miskin",
+    df_t25,
+)
+
+# ============================================================
+# TABLE 26: Literacy Rate (AMH) by Age Group and Poverty (Laki-laki)
+# ============================================================
+
+ws = get_ws("T26_AMH_Male")
+age_ranges_amh = [("15-24 tahun", 15, 24), ("15-55 tahun", 15, 55)]
+
+result_rows = []
+for age_label, lo, hi in age_ranges_amh:
+    sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
+    row = {"Kelompok Umur": age_label}
+    for mk in [0, 1]:
+        mask = sub["mkako"] == mk
+        grp = sub[mask]
+        if len(grp) > 0:
+            row[f"AMH mkako={mk}"] = round(weighted_mean(grp["amh"], grp["fwt"]), 2)
+        else:
+            row[f"AMH mkako={mk}"] = np.nan
+    result_rows.append(row)
+
+df_t26 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+cols_order_amh = ["AMH mkako=1", "AMH mkako=0"]
+df_t26 = df_t26[cols_order_amh]
+write_table(
+    ws,
+    "Tabel 26. Angka Melek Huruf (AMH) Penduduk Laki-laki Menurut Status Miskin",
+    df_t26,
+)
+
+# ============================================================
+# TABLE 27: Literacy Rate (AMH) by Age Group and Poverty (Perempuan)
+# ============================================================
+
+ws = get_ws("T27_AMH_Female")
+
+result_rows = []
+for age_label, lo, hi in age_ranges_amh:
+    sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
+    row = {"Kelompok Umur": age_label}
+    for mk in [0, 1]:
+        mask = sub["mkako"] == mk
+        grp = sub[mask]
+        if len(grp) > 0:
+            row[f"AMH mkako={mk}"] = round(weighted_mean(grp["amh"], grp["fwt"]), 2)
+        else:
+            row[f"AMH mkako={mk}"] = np.nan
+    result_rows.append(row)
+
+df_t27 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+df_t27 = df_t27[cols_order_amh]
+write_table(
+    ws,
+    "Tabel 27. Angka Melek Huruf (AMH) Penduduk Perempuan Menurut Status Miskin",
+    df_t27,
+)
+
+# ============================================================
+# TABLE 28: Literacy Rate (AMH) by Age Group and Poverty (Total)
+# ============================================================
+
+ws = get_ws("T28_AMH_Total")
+
+result_rows = []
+for age_label, lo, hi in age_ranges_amh:
+    sub = df_ind[(df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
+    row = {"Kelompok Umur": age_label}
+    for mk in [0, 1]:
+        mask = sub["mkako"] == mk
+        grp = sub[mask]
+        if len(grp) > 0:
+            row[f"AMH mkako={mk}"] = round(weighted_mean(grp["amh"], grp["fwt"]), 2)
+        else:
+            row[f"AMH mkako={mk}"] = np.nan
+    result_rows.append(row)
+
+df_t28 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
+df_t28 = df_t28[cols_order_amh]
+write_table(
+    ws,
+    "Tabel 28. Angka Melek Huruf (AMH) Penduduk Menurut Status Miskin",
+    df_t28,
 )
 
 # ============================================================
