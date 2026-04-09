@@ -266,6 +266,15 @@ def recode_ijasah(x):
 
 df_ind["kelijasah"] = df_ind["r614"].apply(recode_ijasah)
 
+# Education order for tables
+educ_order = [
+    "Tidak Tamat SD",
+    "SD Sederajat",
+    "SMP Sederajat",
+    "SMU Sederajat",
+    "Perguruan Tinggi",
+]
+
 # School participation (aps)
 df_ind["aps"] = np.where(df_ind["r610"] == 2, 100, 0)
 
@@ -514,23 +523,26 @@ for sex_val in sorted(sub["r405"].dropna().unique()):
     row = {"Jenis Kelamin": "Laki-laki" if sex_val == 1 else "Perempuan"}
     for mk_val in [0, 1]:
         grp = sub[(sub["r405"] == sex_val) & (sub["mkako"] == mk_val)]
-        row[f"N (mkako={int(mk_val)})"] = round(grp["fwt"].sum(), 0)
+        row[f"N mkako={int(mk_val)}"] = round(grp["fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
 total_row = {"Jenis Kelamin": "Total"}
 for mk_val in [0, 1]:
     grp = sub[sub["mkako"] == mk_val]
-    total_row[f"N (mkako={int(mk_val)})"] = round(grp["fwt"].sum(), 0)
+    total_row[f"N mkako={int(mk_val)}"] = round(grp["fwt"].sum(), 0)
 result_rows.append(total_row)
 df_t2 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
 # Calculate percentages (column-wise: distribution of gender within each poverty status)
 for mk_val in [0, 1]:
-    n_col = f"N (mkako={mk_val})"
+    n_col = f"N mkako={mk_val}"
     total_n = df_t2.loc["Total", n_col]
-    pct_col = f"% (mkako={mk_val})"
+    pct_col = f"% mkako={mk_val}"
     for idx in df_t2.index:
         if total_n > 0:
             df_t2.loc[idx, pct_col] = round(df_t2.loc[idx, n_col] / total_n * 100, 2)
+# Column order: Miskin (mkako=1) first
+cols_order_mk = ["N mkako=1", "N mkako=0", "% mkako=1", "% mkako=0"]
+df_t2 = df_t2[cols_order_mk]
 write_table(ws, "Tabel 2. Penduduk Menurut Jenis Kelamin dan Status Kemiskinan", df_t2)
 
 # ============================================================
@@ -561,6 +573,7 @@ for mk_val in [0, 1]:
     for idx in df_t3.index:
         if total_n > 0:
             df_t3.loc[idx, pct_col] = round(df_t3.loc[idx, n_col] / total_n * 100, 2)
+df_t3 = df_t3[cols_order_mk]
 write_table(ws, "Tabel 3. Persentase Penduduk Laki-laki Menurut Kelompok Umur dan Status Kemiskinan", df_t3)
 
 # ============================================================
@@ -591,6 +604,7 @@ for mk_val in [0, 1]:
     for idx in df_t4.index:
         if total_n > 0:
             df_t4.loc[idx, pct_col] = round(df_t4.loc[idx, n_col] / total_n * 100, 2)
+df_t4 = df_t4[cols_order_mk]
 write_table(ws, "Tabel 4. Persentase Penduduk Perempuan Menurut Kelompok Umur dan Status Kemiskinan", df_t4)
 
 # ============================================================
@@ -621,6 +635,7 @@ for mk_val in [0, 1]:
     for idx in df_t5.index:
         if total_n > 0:
             df_t5.loc[idx, pct_col] = round(df_t5.loc[idx, n_col] / total_n * 100, 2)
+df_t5 = df_t5[cols_order_mk]
 write_table(ws, "Tabel 5. Persentase Penduduk Menurut Kelompok Umur dan Status Kemiskinan", df_t5)
 
 # ============================================================
@@ -810,31 +825,140 @@ write_table(
 )
 
 # ============================================================
-# TABLE 10-12: HH Head Education by Gender and Poverty
+# TABLE 10: HH Head Marital Status by Poverty (Laki-laki)
 # ============================================================
 
-ws = get_ws("T10_12_HHHead_Educ")
-sub = df_ind[df_ind["r403"] == 1].copy()
-educ_order = [
-    "Tidak Tamat SD",
-    "SD Sederajat",
-    "SMP Sederajat",
-    "SMU Sederajat",
-    "Perguruan Tinggi",
-]
+ws = get_ws("T10_HHHead_Marital_Male")
+sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 1)].copy()  # Laki-laki
+
+marital_labels = {1: "Belum Kawin", 2: "Kawin", 3: "Cerai Hidup", 4: "Cerai Mati"}
+marital_order = [1, 2, 3, 4]
+
 result_rows = []
-for educ in educ_order:
-    row = {"Pendidikan KRT": educ}
+for marital_val in marital_order:
+    row = {"Status Perkawinan": marital_labels[marital_val]}
     for mk in [0, 1]:
-        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
-        row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+        mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t1012 = pd.DataFrame(result_rows).set_index("Pendidikan KRT")
-for col in df_t1012.columns:
-    total = df_t1012[col].sum()
-    df_t1012[col.replace("N ", "% ")] = (df_t1012[col] / total * 100).round(2)
+# Add Total row
+total_row = {"Status Perkawinan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t10 = pd.DataFrame(result_rows).set_index("Status Perkawinan")
+# Calculate percentages (column-wise) ensuring sum = 100
+for mk in [0, 1]:
+    n_col = f"N mkako={mk}"
+    total_n = df_t10.loc["Total", n_col]
+    pct_col = f"% mkako={mk}"
+    if total_n > 0:
+        # Calculate for all except last and Total
+        pct_sum = 0
+        for idx in marital_order[:-1]:  # All except last
+            label = marital_labels[idx]
+            pct = round(df_t10.loc[label, n_col] / total_n * 100, 2)
+            df_t10.loc[label, pct_col] = pct
+            pct_sum += pct
+        # Last item: make it sum to 100
+        last_label = marital_labels[marital_order[-1]]
+        df_t10.loc[last_label, pct_col] = round(100 - pct_sum, 2)
+        # Total row
+        df_t10.loc["Total", pct_col] = 100.00
+# Reorder columns: Miskin first
+cols_order = ["N mkako=1", "N mkako=0", "% mkako=1", "% mkako=0"]
+df_t10 = df_t10[cols_order]
 write_table(
-    ws, "Tabel 10-12. Kepala RT Menurut Pendidikan dan Status Kemiskinan", df_t1012
+    ws,
+    "Tabel 10. Persentase Kepala Rumah Tangga Laki-laki Menurut Status Miskin dan Status Perkawinan",
+    df_t10,
+)
+
+# ============================================================
+# TABLE 11: HH Head Marital Status by Poverty (Perempuan)
+# ============================================================
+
+ws = get_ws("T11_HHHead_Marital_Female")
+sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2)].copy()  # Perempuan
+
+result_rows = []
+for marital_val in marital_order:
+    row = {"Status Perkawinan": marital_labels[marital_val]}
+    for mk in [0, 1]:
+        mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Status Perkawinan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t11 = pd.DataFrame(result_rows).set_index("Status Perkawinan")
+# Calculate percentages (column-wise) ensuring sum = 100
+for mk in [0, 1]:
+    n_col = f"N mkako={mk}"
+    total_n = df_t11.loc["Total", n_col]
+    pct_col = f"% mkako={mk}"
+    if total_n > 0:
+        pct_sum = 0
+        for idx in marital_order[:-1]:
+            label = marital_labels[idx]
+            pct = round(df_t11.loc[label, n_col] / total_n * 100, 2)
+            df_t11.loc[label, pct_col] = pct
+            pct_sum += pct
+        last_label = marital_labels[marital_order[-1]]
+        df_t11.loc[last_label, pct_col] = round(100 - pct_sum, 2)
+        df_t11.loc["Total", pct_col] = 100.00
+df_t11 = df_t11[cols_order]
+write_table(
+    ws,
+    "Tabel 11. Persentase Kepala Rumah Tangga Perempuan Menurut Status Miskin dan Status Perkawinan",
+    df_t11,
+)
+
+# ============================================================
+# TABLE 12: HH Head Marital Status by Poverty (Total)
+# ============================================================
+
+ws = get_ws("T12_HHHead_Marital_Total")
+sub = df_ind[df_ind["r403"] == 1].copy()  # All household heads
+
+result_rows = []
+for marital_val in marital_order:
+    row = {"Status Perkawinan": marital_labels[marital_val]}
+    for mk in [0, 1]:
+        mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Status Perkawinan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t12 = pd.DataFrame(result_rows).set_index("Status Perkawinan")
+# Calculate percentages (column-wise) ensuring sum = 100
+for mk in [0, 1]:
+    n_col = f"N mkako={mk}"
+    total_n = df_t12.loc["Total", n_col]
+    pct_col = f"% mkako={mk}"
+    if total_n > 0:
+        pct_sum = 0
+        for idx in marital_order[:-1]:
+            label = marital_labels[idx]
+            pct = round(df_t12.loc[label, n_col] / total_n * 100, 2)
+            df_t12.loc[label, pct_col] = pct
+            pct_sum += pct
+        last_label = marital_labels[marital_order[-1]]
+        df_t12.loc[last_label, pct_col] = round(100 - pct_sum, 2)
+        df_t12.loc["Total", pct_col] = 100.00
+df_t12 = df_t12[cols_order]
+write_table(
+    ws,
+    "Tabel 12. Persentase Kepala Rumah Tangga Menurut Status Miskin dan Status Perkawinan",
+    df_t12,
 )
 
 # ============================================================
