@@ -577,8 +577,7 @@ for sex_val in sorted(sub["r405"].dropna().unique()):
 # Add Total row
 total_row = {"Jenis Kelamin": "Total"}
 for mk_val in [0, 1]:
-    grp = sub[sub["mkako"] == mk_val]
-    total_row[f"N mkako={int(mk_val)}"] = round(grp["fwt"].sum(), 0)
+    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
 df_t2 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
 # Calculate percentages using helper function
@@ -608,8 +607,7 @@ for age_grp in age_labels:
 # Add Total row
 total_row = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
-    mask = sub["mkako"] == mk_val
-    total_row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
 df_t3 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
@@ -639,8 +637,7 @@ for age_grp in age_labels:
 # Add Total row
 total_row = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
-    mask = sub["mkako"] == mk_val
-    total_row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
 df_t4 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
@@ -668,8 +665,7 @@ for age_grp in age_labels:
 # Add Total row
 total_row = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
-    mask = sub["mkako"] == mk_val
-    total_row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
 df_t5 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
@@ -864,8 +860,7 @@ for sex in sorted(sub["r405"].dropna().unique()):
 # Add Total row
 total_row = {"Jenis Kelamin": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={int(mk)}"] = sum(r[f"N mkako={int(mk)}"] for r in result_rows)
 result_rows.append(total_row)
 df_t9 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
 # Calculate percentages (column-wise) and ensure they sum to 100
@@ -915,8 +910,7 @@ for marital_val in marital_order:
 # Add Total row
 total_row = {"Status Perkawinan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t10 = pd.DataFrame(result_rows).set_index("Status Perkawinan")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -963,8 +957,7 @@ for marital_val in marital_order:
 # Add Total row
 total_row = {"Status Perkawinan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t11 = pd.DataFrame(result_rows).set_index("Status Perkawinan")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1006,8 +999,7 @@ for marital_val in marital_order:
 # Add Total row
 total_row = {"Status Perkawinan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t12 = pd.DataFrame(result_rows).set_index("Status Perkawinan")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1052,8 +1044,7 @@ for age_grp in age_labels:
 # Add Total row
 total_row = {"Kelompok Umur": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t13 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1097,8 +1088,7 @@ for age_grp in age_labels:
 # Add Total row
 total_row = {"Kelompok Umur": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t14 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1138,8 +1128,7 @@ for age_grp in age_labels:
 # Add Total row
 total_row = {"Kelompok Umur": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t15 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1176,11 +1165,10 @@ for jart in jart_labels:
         mask = (sub["keljart"] == jart) & (sub["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-# Add Total row
+# Add Total row (sum of rounded values for consistency)
 total_row = {"Jumlah ART": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t16 = pd.DataFrame(result_rows).set_index("Jumlah ART")
 # Calculate percentages using helper function
@@ -1219,8 +1207,7 @@ for r611_val in r611_order:
 # Add Total row
 total_row = {"Status Pendidikan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t17 = pd.DataFrame(result_rows).set_index("Status Pendidikan")
 # Calculate percentages using helper function
@@ -1254,8 +1241,7 @@ for r611_val in r611_order:
 # Add Total row
 total_row = {"Status Pendidikan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t18 = pd.DataFrame(result_rows).set_index("Status Pendidikan")
 # Calculate percentages using helper function
@@ -1284,8 +1270,7 @@ for r611_val in r611_order:
 # Add Total row
 total_row = {"Status Pendidikan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t19 = pd.DataFrame(result_rows).set_index("Status Pendidikan")
 # Calculate percentages using helper function
@@ -1314,8 +1299,7 @@ for educ in educ_order:
 # Add Total row
 total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t20 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
 # Calculate percentages using helper function
@@ -1346,8 +1330,7 @@ for educ in educ_order:
 # Add Total row
 total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t21 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
 # Calculate percentages using helper function
@@ -1376,8 +1359,7 @@ for educ in educ_order:
 # Add Total row
 total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t22 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
 # Calculate percentages using helper function
@@ -1581,8 +1563,7 @@ for educ in educ_order:
 # Add Total row
 total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t29 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1613,8 +1594,7 @@ for educ in educ_order:
 # Add Total row
 total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t30 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1643,8 +1623,7 @@ for educ in educ_order:
 # Add Total row
 total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t31 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
 # Calculate percentages (column-wise) ensuring sum = 100
@@ -1691,8 +1670,7 @@ for kerja in kerja_labels:
     result_rows.append(row)
 total_row = {"Status Bekerja": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t32 = pd.DataFrame(result_rows).set_index("Status Bekerja")
 n_cols = ["N mkako=0", "N mkako=1"]
@@ -1734,8 +1712,7 @@ for kerja in kerja_labels:
     result_rows.append(row)
 total_row = {"Status Bekerja": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t33 = pd.DataFrame(result_rows).set_index("Status Bekerja")
 calc_pct_ensure_100(df_t33, n_cols, pct_cols, kerja_labels)
@@ -1775,8 +1752,7 @@ for kerja in kerja_labels:
     result_rows.append(row)
 total_row = {"Status Bekerja": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t34 = pd.DataFrame(result_rows).set_index("Status Bekerja")
 calc_pct_ensure_100(df_t34, n_cols, pct_cols, kerja_labels)
@@ -1810,8 +1786,7 @@ for sektor in sektor_labels:
     result_rows.append(row)
 total_row = {"Sektor Bekerja": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t35 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
 calc_pct_ensure_100(df_t35, n_cols, pct_cols, sektor_labels)
@@ -1843,8 +1818,7 @@ for sektor in sektor_labels:
     result_rows.append(row)
 total_row = {"Sektor Bekerja": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t36 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
 calc_pct_ensure_100(df_t36, n_cols, pct_cols, sektor_labels)
@@ -1876,8 +1850,7 @@ for sektor in sektor_labels:
     result_rows.append(row)
 total_row = {"Sektor Bekerja": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t37 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
 calc_pct_ensure_100(df_t37, n_cols, pct_cols, sektor_labels)
@@ -1907,8 +1880,7 @@ for jkn in jkn_labels:
     result_rows.append(row)
 total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t38 = pd.DataFrame(result_rows).set_index("Apakah Mempunyai Jaminan Kesehatan ?")
 n_cols = ["N mkako=0", "N mkako=1"]
@@ -1938,8 +1910,7 @@ for jkn in jkn_labels:
     result_rows.append(row)
 total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t39 = pd.DataFrame(result_rows).set_index("Apakah Mempunyai Jaminan Kesehatan ?")
 calc_pct_ensure_100(df_t39, n_cols, pct_cols, jkn_labels)
@@ -1967,8 +1938,7 @@ for jkn in jkn_labels:
     result_rows.append(row)
 total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t40 = pd.DataFrame(result_rows).set_index("Apakah Mempunyai Jaminan Kesehatan ?")
 calc_pct_ensure_100(df_t40, n_cols, pct_cols, jkn_labels)
@@ -1997,8 +1967,7 @@ for rk in rokok_labels:
     result_rows.append(row)
 total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t41 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
 n_cols = ["N mkako=0", "N mkako=1"]
@@ -2027,8 +1996,7 @@ for rk in rokok_labels:
     result_rows.append(row)
 total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t42 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
 calc_pct_ensure_100(df_t42, n_cols, pct_cols, rokok_labels)
@@ -2055,8 +2023,7 @@ for rk in rokok_labels:
     result_rows.append(row)
 total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
 for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
 df_t43 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
 calc_pct_ensure_100(df_t43, n_cols, pct_cols, rokok_labels)
