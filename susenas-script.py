@@ -372,9 +372,8 @@ def recode_rokok(x):
         return "Ya, setiap hari"
     elif x == 2:
         return "Ya, tidak setiap hari"
-    elif x in [5, 8]:
+    else:
         return "Tidak/Tidak Tahu"
-    return np.nan
 
 
 df_ind["rokok"] = df_ind["r1207"].apply(recode_rokok)
@@ -1981,28 +1980,91 @@ write_table(
 )
 
 # ============================================================
-# TABLE 41-43: Smoking (5+) by Gender and Poverty
+# TABLE 41: Smoking by Poverty (Laki-laki, 5+)
 # ============================================================
 
-ws = get_ws("T41_43_Smoking")
-sub = df_ind[df_ind["r407"] >= 5].copy()
-rokok_cats = ["Ya, setiap hari", "Ya, tidak setiap hari", "Tidak/Tidak Tahu"]
+ws = get_ws("T41_Smoking_Male")
+sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 5)].copy()
+
+rokok_labels = ["Ya, setiap hari", "Ya, tidak setiap hari", "Tidak/Tidak Tahu"]
+
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    for rk in rokok_cats:
-        row = {
-            "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan",
-            "Status Merokok": rk,
-        }
-        for mk in [0, 1]:
-            mask = (sub["r405"] == sex) & (sub["rokok"] == rk) & (sub["mkako"] == mk)
-            row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
-        result_rows.append(row)
-df_t4143 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin", "Status Merokok"])
+for rk in rokok_labels:
+    row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    for mk in [0, 1]:
+        mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t41 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t41, n_cols, pct_cols, rokok_labels)
+df_t41 = df_t41[cols_order_mk]
 write_table(
     ws,
-    "Tabel 41-43. Perilaku Merokok (5+) Menurut Jenis Kelamin dan Status Kemiskinan",
-    df_t4143,
+    "Tabel 41. Persentase Penduduk Laki-laki Berumur 5 Tahun Keatas Menurut Apakah Selama Sebulan Terakhir Merokok Tembakau dan Status Miskin",
+    df_t41,
+)
+
+# ============================================================
+# TABLE 42: Smoking by Poverty (Perempuan, 5+)
+# ============================================================
+
+ws = get_ws("T42_Smoking_Female")
+sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 5)].copy()
+
+result_rows = []
+for rk in rokok_labels:
+    row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    for mk in [0, 1]:
+        mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t42 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
+calc_pct_ensure_100(df_t42, n_cols, pct_cols, rokok_labels)
+df_t42 = df_t42[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 42. Persentase Penduduk Perempuan Berumur 5 Tahun Keatas Menurut Apakah Selama Sebulan Terakhir Merokok Tembakau dan Status Miskin",
+    df_t42,
+)
+
+# ============================================================
+# TABLE 43: Smoking by Poverty (Total, 5+)
+# ============================================================
+
+ws = get_ws("T43_Smoking_Total")
+sub = df_ind[df_ind["r407"] >= 5].copy()
+
+result_rows = []
+for rk in rokok_labels:
+    row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    for mk in [0, 1]:
+        mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t43 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
+calc_pct_ensure_100(df_t43, n_cols, pct_cols, rokok_labels)
+df_t43 = df_t43[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 43. Persentase Penduduk Berumur 5 Tahun Keatas Menurut Jenis Kelamin, Apakah Selama Sebulan Terakhir Merokok Tembakau dan Status Miskin",
+    df_t43,
 )
 
 # ============================================================
