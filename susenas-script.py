@@ -410,21 +410,23 @@ mask2 = (
 df_rt.loc[mask1 | mask2, "sal"] = 100
 
 
-# Clean drinking water (moved from r1810 to r1610)
-def calc_airmlayak(row):
-    good_src = {3, 4, 5, 7, 10}
-    bad_src = {1, 2}
-    a, b = row.get("r1610a"), row.get("r1614a")
-    if a in good_src:
-        return 100
-    if a in bad_src and b in good_src:
-        return 100
-    return 0
+df_rt["airmlayak"] = 0
+good_src = {3, 4, 5, 7, 10}
+bad_src = {1, 2}
+other_src = {6, 8, 9, 11}
 
+mask = (df_rt["r1610a"].isin(good_src)) & (df_rt["r1614a"].isin(good_src))
+df_rt.loc[mask, "airmlayak"] = 100
 
-df_rt["airmlayak"] = df_rt.apply(calc_airmlayak, axis=1)
+mask = (df_rt["r1610a"].isin(good_src)) & (df_rt["r1614a"].isin(bad_src))
+df_rt.loc[mask, "airmlayak"] = 100
 
-# Clean water (sab) (moved from r1810 to r1610)
+mask = (df_rt["r1610a"].isin(good_src)) & (df_rt["r1614a"].isin(other_src))
+df_rt.loc[mask, "airmlayak"] = 100
+
+mask = (df_rt["r1610a"].isin(bad_src)) & (df_rt["r1614a"].isin(good_src))
+df_rt.loc[mask, "airmlayak"] = 100
+
 df_rt["sab"] = 0
 df_rt.loc[df_rt["r1610a"].isin([1, 2, 3]), "sab"] = 100
 df_rt.loc[(df_rt["r1610a"].isin([4, 5, 7])) & (df_rt["r1610c"] == 2), "sab"] = 100
@@ -2040,39 +2042,63 @@ write_table(
 
 ws = get_ws("T44_Water_Sanitation")
 result_rows = []
+
+row = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Layak"}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
-    result_rows.append(
-        {
-            "Status Kemiskinan": "Miskin" if mk == 1 else "Tidak Miskin",
-            "Air Minum Layak (%)": round(weighted_mean(grp["airmlayak"], w), 2),
-            "Air Bersih/SAB (%)": round(weighted_mean(grp["sab"], w), 2),
-            "Sanitasi Layak (%)": round(weighted_mean(grp["sal"], w), 2),
-        }
-    )
-df_t44 = pd.DataFrame(result_rows).set_index("Status Kemiskinan")
+    row[f"% mkako={mk}"] = round(weighted_mean(grp["airmlayak"], w), 2)
+result_rows.append(row)
+
+row = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Bersih"}
+for mk in [0, 1]:
+    grp = df_rt[df_rt["mkako"] == mk]
+    w = grp["fwt"]
+    row[f"% mkako={mk}"] = round(weighted_mean(grp["sab"], w), 2)
+result_rows.append(row)
+
+row = {"Penggunaan Air Minum dan Sanitasi": "Sanitasi Layak"}
+for mk in [0, 1]:
+    grp = df_rt[df_rt["mkako"] == mk]
+    w = grp["fwt"]
+    row[f"% mkako={mk}"] = round(weighted_mean(grp["sal"], w), 2)
+result_rows.append(row)
+
+df_t44 = pd.DataFrame(result_rows).set_index("Penggunaan Air Minum dan Sanitasi")
+cols_order_mk_pct = ["% mkako=1", "% mkako=0"]
+df_t44 = df_t44[cols_order_mk_pct]
 write_table(
-    ws, "Tabel 44. Akses Air Minum dan Sanitasi Layak Menurut Status Kemiskinan", df_t44
+    ws, "Tabel 44. Persentase Rumah Tangga yang Menggunakan Air Minum Layak, Air Minum Bersih, Sanitasi Layak, dan Status Miskin", df_t44
 )
 
 # ============================================================
-# TABLE 45: Land Ownership (r1602) by Poverty
+# TABLE 45: House Ownership by Poverty
 # ============================================================
 
-ws = get_ws("T45_LandOwnership")
+ws = get_ws("T45_HouseOwnership")
+
+kepemilikan_labels = {1: "Milik Sendiri", 2: "Kontrak/Sewa", 3: "Bebas Sewa", 4: "Dinas"}
+kepemilikan_order = [1, 2, 3, 4]
+
 result_rows = []
-for r1602_val in sorted(df_rt["r1602"].dropna().unique()):
-    row = {"Status Penguasaan Bangunan": int(r1602_val)}
+for val in kepemilikan_order:
+    row = {"Status Kepemilikan Rumah": kepemilikan_labels[val]}
     for mk in [0, 1]:
-        mask = (df_rt["r1602"] == r1602_val) & (df_rt["mkako"] == mk)
-        row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
+        mask = (df_rt["r1602"] == val) & (df_rt["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t45 = pd.DataFrame(result_rows).set_index("Status Penguasaan Bangunan")
-for col in df_t45.columns:
-    total = df_t45[col].sum()
-    df_t45[col.replace("N ", "% ")] = (df_t45[col] / total * 100).round(2)
-write_table(ws, "Tabel 45. Penguasaan Bangunan Menurut Status Kemiskinan", df_t45)
+
+total_row = {"Status Kepemilikan Rumah": "Total"}
+for mk in [0, 1]:
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
+result_rows.append(total_row)
+
+df_t45 = pd.DataFrame(result_rows).set_index("Status Kepemilikan Rumah")
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t45, n_cols, pct_cols, [kepemilikan_labels[v] for v in kepemilikan_order])
+df_t45 = df_t45[cols_order_mk]
+write_table(ws, "Tabel 45. Persentase Rumah Tangga Menurut Status Kepemilikan Rumah dan Status Miskin", df_t45)
 
 # ============================================================
 # TABLE 46: Floor Area per Capita by Poverty
