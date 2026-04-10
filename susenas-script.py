@@ -347,8 +347,9 @@ df_ind["kformal"] = np.where(df_ind["statuskerja"] == "Formal", 100, 0)
 df_ind["kinformal"] = np.where(df_ind["statuskerja"] == "Informal", 100, 0)
 
 # Sector
+# r705: 1-6 = Pertanian, 7+ = Non Pertanian
 df_ind["sektorkerja"] = pd.cut(
-    df_ind["r706"], bins=[0, 6, 26], labels=["Pertanian", "Non Pertanian"]
+    df_ind["r705"], bins=[0, 6, 99], labels=["Pertanian", "Non Pertanian"]
 )
 df_ind["ktani"] = np.where(df_ind["sektorkerja"] == "Pertanian", 100, 0)
 df_ind["kntani"] = np.where(df_ind["sektorkerja"] == "Non Pertanian", 100, 0)
@@ -1663,7 +1664,11 @@ write_table(
 ws = get_ws("T32_Employment_Male")
 sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
 
-kerja_labels = ["Tidak Bekerja", "Bekerja di Sektor Formal", "Bekerja di Sektor Informal"]
+kerja_labels = [
+    "Tidak Bekerja",
+    "Bekerja di Sektor Formal",
+    "Bekerja di Sektor Informal",
+]
 
 result_rows = []
 for kerja in kerja_labels:
@@ -1672,9 +1677,17 @@ for kerja in kerja_labels:
         if kerja == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
         elif kerja == "Bekerja di Sektor Formal":
-            mask = (sub["statuskerja"] == "Formal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["statuskerja"] == "Formal")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         else:
-            mask = (sub["statuskerja"] == "Informal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["statuskerja"] == "Informal")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 total_row = {"Status Bekerja": "Total"}
@@ -1707,9 +1720,17 @@ for kerja in kerja_labels:
         if kerja == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
         elif kerja == "Bekerja di Sektor Formal":
-            mask = (sub["statuskerja"] == "Formal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["statuskerja"] == "Formal")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         else:
-            mask = (sub["statuskerja"] == "Informal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["statuskerja"] == "Informal")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 total_row = {"Status Bekerja": "Total"}
@@ -1740,9 +1761,17 @@ for kerja in kerja_labels:
         if kerja == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
         elif kerja == "Bekerja di Sektor Formal":
-            mask = (sub["statuskerja"] == "Formal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["statuskerja"] == "Formal")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         else:
-            mask = (sub["statuskerja"] == "Informal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["statuskerja"] == "Informal")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 total_row = {"Status Bekerja": "Total"}
@@ -1760,55 +1789,195 @@ write_table(
 )
 
 # ============================================================
-# TABLE 35-37: Employment (Agriculture) by Gender and Poverty (15+)
+# TABLE 35: Employment Sector by Poverty (Laki-laki, 15+)
 # ============================================================
 
-ws = get_ws("T35_37_Employment_Ag")
+ws = get_ws("T35_Sector_Male")
+sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
+
+sektor_labels = ["Tidak Bekerja", "Bekerja di Sektor Pertanian", "Bekerja Bukan di Sektor Pertanian"]
+
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    row = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
+for sektor in sektor_labels:
+    row = {"Sektor Bekerja": sektor}
     for mk in [0, 1]:
-        mask = (sub["r405"] == sex) & (sub["mkako"] == mk)
-        grp = sub[mask]
-        w = grp["fwt"]
-        row[f"% Tdk Kerja mkako={int(mk)}"] = round(weighted_mean(grp["tkerja"], w), 2)
-        row[f"% Pertanian mkako={int(mk)}"] = round(weighted_mean(grp["ktani"], w), 2)
-        row[f"% Non Pertanian mkako={int(mk)}"] = round(
-            weighted_mean(grp["kntani"], w), 2
-        )
+        if sektor == "Tidak Bekerja":
+            mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
+        elif sektor == "Bekerja di Sektor Pertanian":
+            mask = (sub["sektorkerja"] == "Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        else:
+            mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t3537 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
+total_row = {"Sektor Bekerja": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t35 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
+calc_pct_ensure_100(df_t35, n_cols, pct_cols, sektor_labels)
+df_t35 = df_t35[cols_order_mk]
 write_table(
     ws,
-    "Tabel 35-37. Sektor Kerja (Pertanian/Non-Pertanian) Menurut Jenis Kelamin dan Status Kemiskinan (15+)",
-    df_t3537,
+    "Tabel 35. Persentase Penduduk Laki-laki Berumur 15 Tahun Keatas Menurut Sektor Bekerja dan Status Miskin",
+    df_t35,
 )
 
 # ============================================================
-# TABLE 38-40: JKN Ownership by Gender and Poverty
+# TABLE 36: Employment Sector by Poverty (Perempuan, 15+)
 # ============================================================
 
-ws = get_ws("T38_40_JKN")
+ws = get_ws("T36_Sector_Female")
+sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
+
 result_rows = []
-for sex in sorted(df_ind["r405"].dropna().unique()):
-    for jkn_val in [0, 1]:
-        row = {
-            "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan",
-            "Kepemilikan JKN": "Memiliki" if jkn_val == 1 else "Tidak Memiliki",
-        }
-        for mk in [0, 1]:
-            mask = (
-                (df_ind["r405"] == sex)
-                & (df_ind["milikjkn"] == jkn_val)
-                & (df_ind["mkako"] == mk)
-            )
-            row[f"N mkako={int(mk)}"] = round(df_ind.loc[mask, "fwt"].sum(), 0)
-        result_rows.append(row)
-df_t3840 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin", "Kepemilikan JKN"])
+for sektor in sektor_labels:
+    row = {"Sektor Bekerja": sektor}
+    for mk in [0, 1]:
+        if sektor == "Tidak Bekerja":
+            mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
+        elif sektor == "Bekerja di Sektor Pertanian":
+            mask = (sub["sektorkerja"] == "Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        else:
+            mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Sektor Bekerja": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t36 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
+calc_pct_ensure_100(df_t36, n_cols, pct_cols, sektor_labels)
+df_t36 = df_t36[cols_order_mk]
 write_table(
     ws,
-    "Tabel 38-40. Kepemilikan JKN Menurut Jenis Kelamin dan Status Kemiskinan",
-    df_t3840,
+    "Tabel 36. Persentase Penduduk Perempuan Berumur 15 Tahun Keatas Menurut Sektor Bekerja dan Status Miskin",
+    df_t36,
+)
+
+# ============================================================
+# TABLE 37: Employment Sector by Poverty (Total, 15+)
+# ============================================================
+
+ws = get_ws("T37_Sector_Total")
+sub = df_ind[df_ind["r407"] >= 15].copy()
+
+result_rows = []
+for sektor in sektor_labels:
+    row = {"Sektor Bekerja": sektor}
+    for mk in [0, 1]:
+        if sektor == "Tidak Bekerja":
+            mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
+        elif sektor == "Bekerja di Sektor Pertanian":
+            mask = (sub["sektorkerja"] == "Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        else:
+            mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Sektor Bekerja": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t37 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
+calc_pct_ensure_100(df_t37, n_cols, pct_cols, sektor_labels)
+df_t37 = df_t37[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 37. Persentase Penduduk Berumur 15 Tahun Keatas Menurut Jenis Kelamin, Sektor Bekerja, dan Status Miskin",
+    df_t37,
+)
+
+# ============================================================
+# TABLE 38: JKN Ownership by Poverty (Laki-laki)
+# ============================================================
+
+ws = get_ws("T38_JKN_Male")
+sub = df_ind[df_ind["r405"] == 1].copy()
+
+jkn_labels = ["Ya", "Tidak"]
+
+result_rows = []
+for jkn in jkn_labels:
+    row = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    for mk in [0, 1]:
+        jkn_val = 1 if jkn == "Ya" else 0
+        mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t38 = pd.DataFrame(result_rows).set_index("Apakah Mempunyai Jaminan Kesehatan ?")
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t38, n_cols, pct_cols, jkn_labels)
+df_t38 = df_t38[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 38. Persentase Penduduk Laki-laki yang Mempunyai Jaminan Kesehatan Menurut Status Miskin",
+    df_t38,
+)
+
+# ============================================================
+# TABLE 39: JKN Ownership by Poverty (Perempuan)
+# ============================================================
+
+ws = get_ws("T39_JKN_Female")
+sub = df_ind[df_ind["r405"] == 2].copy()
+
+result_rows = []
+for jkn in jkn_labels:
+    row = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    for mk in [0, 1]:
+        jkn_val = 1 if jkn == "Ya" else 0
+        mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t39 = pd.DataFrame(result_rows).set_index("Apakah Mempunyai Jaminan Kesehatan ?")
+calc_pct_ensure_100(df_t39, n_cols, pct_cols, jkn_labels)
+df_t39 = df_t39[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 39. Persentase Penduduk Perempuan yang Mempunyai Jaminan Kesehatan Menurut Status Miskin",
+    df_t39,
+)
+
+# ============================================================
+# TABLE 40: JKN Ownership by Poverty (Total)
+# ============================================================
+
+ws = get_ws("T40_JKN_Total")
+sub = df_ind.copy()
+
+result_rows = []
+for jkn in jkn_labels:
+    row = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    for mk in [0, 1]:
+        jkn_val = 1 if jkn == "Ya" else 0
+        mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t40 = pd.DataFrame(result_rows).set_index("Apakah Mempunyai Jaminan Kesehatan ?")
+calc_pct_ensure_100(df_t40, n_cols, pct_cols, jkn_labels)
+df_t40 = df_t40[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 40. Persentase Penduduk yang Mempunyai Jaminan Kesehatan Menurut Jenis Kelamin dan Status Miskin",
+    df_t40,
 )
 
 # ============================================================
