@@ -27,8 +27,8 @@ PATH_KP42 = "data/2026/1707-ssn202503-kp-blok42.dbf"
 OUTPUT = "output/Poverty_Profile_Tables.xlsx"
 
 # Poverty parameters for r102=7 (Lebong)
-FK_VALUE = 0.86987940631734
-GK_VALUE = 532432
+FK_VALUE = 0.8135755811606
+GK_VALUE = 540904
 REGION_CODE = 7
 
 # ============================================================
@@ -180,10 +180,12 @@ for df in [df_kp43, df_ind_1, df_ind_2, df_rt]:
 
 # Merge IND files horizontally (split due to DBF column limit)
 # Drop duplicate common columns from IND-2 except merge keys
-merge_keys = ['urut', 'r401']
-common_cols = ['psu', 'ssu', 'strata', 'r101', 'r102', 'r105', 'fwt']
-df_ind_2_unique = df_ind_2.drop(columns=[c for c in common_cols if c in df_ind_2.columns])
-df_ind = pd.merge(df_ind_1, df_ind_2_unique, on=merge_keys, how='inner')
+merge_keys = ["urut", "r401"]
+common_cols = ["psu", "ssu", "strata", "r101", "r102", "r105", "fwt"]
+df_ind_2_unique = df_ind_2.drop(
+    columns=[c for c in common_cols if c in df_ind_2.columns]
+)
+df_ind = pd.merge(df_ind_1, df_ind_2_unique, on=merge_keys, how="inner")
 
 # ============================================================
 # SECTION 1: POVERTY VARIABLES (kp43 file)
@@ -243,8 +245,22 @@ df_kp43["dmkako"] = np.where(df_kp43["mkako"] == 1, 100, 0)
 print("Merging poverty status to individual and household files...")
 
 # Columns to merge from kp43
-poverty_cols = ["urut", "mkako", "dmkako", "p1kako", "p2kako", "nkapita", "kapita", "kapitafk", "gkkako", "weind",
-                "foodkapita", "nonfoodkapita", "sharefoodkapita", "sharenonfoodkapita"]
+poverty_cols = [
+    "urut",
+    "mkako",
+    "dmkako",
+    "p1kako",
+    "p2kako",
+    "nkapita",
+    "kapita",
+    "kapitafk",
+    "gkkako",
+    "weind",
+    "foodkapita",
+    "nonfoodkapita",
+    "sharefoodkapita",
+    "sharenonfoodkapita",
+]
 
 # Merge to df_ind (individuals)
 df_ind = pd.merge(df_ind, df_kp43[poverty_cols], on="urut", how="left")
@@ -310,7 +326,7 @@ educ_order = [
 # School participation (aps) - using r611 = 2 (Masih bersekolah)
 df_ind["aps"] = np.where(df_ind["r611"] == 2, 100, 0)
 
-# Literacy (amh) - moved from r607/r608/r609 to r608/r609/r610
+# Literacy (amh) - moved from r607/r608/catatar609 to r608/r609/r610
 df_ind["amh"] = np.where(
     (df_ind["r608"] == 1) | (df_ind["r609"] == 1) | (df_ind["r610"] == 1),
     100,
@@ -600,7 +616,11 @@ n_cols = ["N mkako=0", "N mkako=1"]
 pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t3, n_cols, pct_cols, age_labels)
 df_t3 = df_t3[cols_order_mk]
-write_table(ws, "Tabel 3. Persentase Penduduk Laki-laki Menurut Kelompok Umur dan Status Kemiskinan", df_t3)
+write_table(
+    ws,
+    "Tabel 3. Persentase Penduduk Laki-laki Menurut Kelompok Umur dan Status Kemiskinan",
+    df_t3,
+)
 
 # ============================================================
 # TABLE 4: Age Group by Poverty (Perempuan)
@@ -625,7 +645,11 @@ df_t4 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
 calc_pct_ensure_100(df_t4, n_cols, pct_cols, age_labels)
 df_t4 = df_t4[cols_order_mk]
-write_table(ws, "Tabel 4. Persentase Penduduk Perempuan Menurut Kelompok Umur dan Status Kemiskinan", df_t4)
+write_table(
+    ws,
+    "Tabel 4. Persentase Penduduk Perempuan Menurut Kelompok Umur dan Status Kemiskinan",
+    df_t4,
+)
 
 # ============================================================
 # TABLE 5: Age Group by Poverty (Total)
@@ -650,14 +674,20 @@ df_t5 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
 calc_pct_ensure_100(df_t5, n_cols, pct_cols, age_labels)
 df_t5 = df_t5[cols_order_mk]
-write_table(ws, "Tabel 5. Persentase Penduduk Menurut Kelompok Umur dan Status Kemiskinan", df_t5)
+write_table(
+    ws,
+    "Tabel 5. Persentase Penduduk Menurut Kelompok Umur dan Status Kemiskinan",
+    df_t5,
+)
 
 # ============================================================
 # TABLE 6: Marital Status x Age Group by Poverty (Laki-laki, age >= 10)
 # ============================================================
 
 ws = get_ws("T6_MaritalStatus_Male")
-sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 10)].copy()  # Laki-laki, age >= 10
+sub = df_ind[
+    (df_ind["r405"] == 1) & (df_ind["r407"] >= 10)
+].copy()  # Laki-laki, age >= 10
 
 marital_labels = {1: "Belum Kawin", 2: "Kawin", 3: "Cerai Hidup", 4: "Cerai Mati"}
 age_groups = ["10-18", ">18"]
@@ -683,12 +713,16 @@ for marital_val in [1, 2, 3, 4]:
     for mk in [0, 1]:
         # Sum of this marital status for this poverty status
         total_marital_mk = sum(
-            r[f"N mkako={mk}"] for r in result_rows if r["Status Perkawinan"] == marital_label
+            r[f"N mkako={mk}"]
+            for r in result_rows
+            if r["Status Perkawinan"] == marital_label
         )
         # Calculate percentages
         for r in result_rows:
             if r["Status Perkawinan"] == marital_label and total_marital_mk > 0:
-                r[f"% mkako={mk}"] = round(r[f"N mkako={mk}"] / total_marital_mk * 100, 2)
+                r[f"% mkako={mk}"] = round(
+                    r[f"N mkako={mk}"] / total_marital_mk * 100, 2
+                )
 
 # Add single Total row showing 100 for each column
 total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
@@ -701,14 +735,20 @@ df_t6 = pd.DataFrame(result_rows)
 # Reorder columns
 cols_order = ["Status Perkawinan", "Kelompok Umur", "% mkako=1", "% mkako=0"]
 df_t6 = df_t6[cols_order]
-write_table(ws, "Tabel 6. Persentase Penduduk Laki-laki Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan", df_t6)
+write_table(
+    ws,
+    "Tabel 6. Persentase Penduduk Laki-laki Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan",
+    df_t6,
+)
 
 # ============================================================
 # TABLE 7: Marital Status x Age Group by Poverty (Perempuan, age >= 10)
 # ============================================================
 
 ws = get_ws("T7_MaritalStatus_Female")
-sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 10)].copy()  # Perempuan, age >= 10
+sub = df_ind[
+    (df_ind["r405"] == 2) & (df_ind["r407"] >= 10)
+].copy()  # Perempuan, age >= 10
 
 result_rows = []
 for marital_val in [1, 2, 3, 4]:
@@ -730,11 +770,15 @@ for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for mk in [0, 1]:
         total_marital_mk = sum(
-            r[f"N mkako={mk}"] for r in result_rows if r["Status Perkawinan"] == marital_label
+            r[f"N mkako={mk}"]
+            for r in result_rows
+            if r["Status Perkawinan"] == marital_label
         )
         for r in result_rows:
             if r["Status Perkawinan"] == marital_label and total_marital_mk > 0:
-                r[f"% mkako={mk}"] = round(r[f"N mkako={mk}"] / total_marital_mk * 100, 2)
+                r[f"% mkako={mk}"] = round(
+                    r[f"N mkako={mk}"] / total_marital_mk * 100, 2
+                )
 
 # Add single Total row showing 100 for each column
 total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
@@ -745,7 +789,11 @@ result_rows.append(total_row)
 
 df_t7 = pd.DataFrame(result_rows)
 df_t7 = df_t7[cols_order]
-write_table(ws, "Tabel 7. Persentase Penduduk Perempuan Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan", df_t7)
+write_table(
+    ws,
+    "Tabel 7. Persentase Penduduk Perempuan Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan",
+    df_t7,
+)
 
 # ============================================================
 # TABLE 8: Marital Status x Age Group by Poverty (Total, age >= 10)
@@ -774,11 +822,15 @@ for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for mk in [0, 1]:
         total_marital_mk = sum(
-            r[f"N mkako={mk}"] for r in result_rows if r["Status Perkawinan"] == marital_label
+            r[f"N mkako={mk}"]
+            for r in result_rows
+            if r["Status Perkawinan"] == marital_label
         )
         for r in result_rows:
             if r["Status Perkawinan"] == marital_label and total_marital_mk > 0:
-                r[f"% mkako={mk}"] = round(r[f"N mkako={mk}"] / total_marital_mk * 100, 2)
+                r[f"% mkako={mk}"] = round(
+                    r[f"N mkako={mk}"] / total_marital_mk * 100, 2
+                )
 
 # Add single Total row showing 100 for each column
 total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
@@ -789,7 +841,11 @@ result_rows.append(total_row)
 
 df_t8 = pd.DataFrame(result_rows)
 df_t8 = df_t8[cols_order]
-write_table(ws, "Tabel 8. Persentase Penduduk Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan", df_t8)
+write_table(
+    ws,
+    "Tabel 8. Persentase Penduduk Berumur 10+ Menurut Status Perkawinan, Kelompok Umur dan Status Kemiskinan",
+    df_t8,
+)
 
 # ============================================================
 # TABLE 9: Household Head Gender by Poverty
@@ -980,7 +1036,9 @@ write_table(
 # ============================================================
 
 ws = get_ws("T13_HHHead_Age_Male")
-sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
+sub = df_ind[
+    (df_ind["r403"] == 1) & (df_ind["r405"] == 1) & (df_ind["r407"] >= 15)
+].copy()
 age_labels = ["15-24", "25-44", "45-64", "65+"]
 
 result_rows = []
@@ -1014,7 +1072,9 @@ for mk in [0, 1]:
 # Reorder columns: Miskin first
 df_t13 = df_t13[cols_order_mk]
 write_table(
-    ws, "Tabel 13. Persentase Kepala Rumah Tangga Laki-laki Berumur 15+ Menurut Status Miskin dan Kelompok Umur", df_t13
+    ws,
+    "Tabel 13. Persentase Kepala Rumah Tangga Laki-laki Berumur 15+ Menurut Status Miskin dan Kelompok Umur",
+    df_t13,
 )
 
 # ============================================================
@@ -1022,7 +1082,9 @@ write_table(
 # ============================================================
 
 ws = get_ws("T14_HHHead_Age_Female")
-sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
+sub = df_ind[
+    (df_ind["r403"] == 1) & (df_ind["r405"] == 2) & (df_ind["r407"] >= 15)
+].copy()
 
 result_rows = []
 for age_grp in age_labels:
@@ -1053,7 +1115,9 @@ for mk in [0, 1]:
         df_t14.loc["Total", pct_col] = 100.00
 df_t14 = df_t14[cols_order_mk]
 write_table(
-    ws, "Tabel 14. Persentase Kepala Rumah Tangga Perempuan Berumur 15+ Menurut Status Miskin dan Kelompok Umur", df_t14
+    ws,
+    "Tabel 14. Persentase Kepala Rumah Tangga Perempuan Berumur 15+ Menurut Status Miskin dan Kelompok Umur",
+    df_t14,
 )
 
 # ============================================================
@@ -1092,7 +1156,9 @@ for mk in [0, 1]:
         df_t15.loc["Total", pct_col] = 100.00
 df_t15 = df_t15[cols_order_mk]
 write_table(
-    ws, "Tabel 15. Persentase Kepala Rumah Tangga Berumur 15+ Menurut Status Miskin dan Kelompok Umur", df_t15
+    ws,
+    "Tabel 15. Persentase Kepala Rumah Tangga Berumur 15+ Menurut Status Miskin dan Kelompok Umur",
+    df_t15,
 )
 
 # ============================================================
@@ -1122,7 +1188,9 @@ pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t16, n_cols, pct_cols, jart_labels)
 df_t16 = df_t16[cols_order_mk]
 write_table(
-    ws, "Tabel 16. Persentase Rata-rata Banyaknya Anggota Rumah Tangga Menurut Status Miskin", df_t16
+    ws,
+    "Tabel 16. Persentase Rata-rata Banyaknya Anggota Rumah Tangga Menurut Status Miskin",
+    df_t16,
 )
 
 # ============================================================
@@ -1130,7 +1198,9 @@ write_table(
 # ============================================================
 
 ws = get_ws("T17_SchoolPart_Male")
-sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 5) & (df_ind["r407"] <= 24)].copy()
+sub = df_ind[
+    (df_ind["r405"] == 1) & (df_ind["r407"] >= 5) & (df_ind["r407"] <= 24)
+].copy()
 r611_labels = {
     1: "Tidak/belum pernah bersekolah",
     2: "Masih bersekolah",
@@ -1169,7 +1239,9 @@ write_table(
 # ============================================================
 
 ws = get_ws("T18_SchoolPart_Female")
-sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 5) & (df_ind["r407"] <= 24)].copy()
+sub = df_ind[
+    (df_ind["r405"] == 2) & (df_ind["r407"] >= 5) & (df_ind["r407"] <= 24)
+].copy()
 
 result_rows = []
 for r611_val in r611_order:
@@ -1321,7 +1393,9 @@ write_table(
 # ============================================================
 
 ws = get_ws("T23_APS_Male")
-sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+sub = df_ind[
+    (df_ind["r405"] == 1) & (df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)
+].copy()
 age_groups_aps = ["7-12", "13-15", "16-18"]
 
 result_rows = []
@@ -1351,7 +1425,9 @@ write_table(
 # ============================================================
 
 ws = get_ws("T24_APS_Female")
-sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+sub = df_ind[
+    (df_ind["r405"] == 2) & (df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)
+].copy()
 
 result_rows = []
 for age_grp in age_groups_aps:
@@ -1409,7 +1485,9 @@ age_ranges_amh = [("15-24 tahun", 15, 24), ("15-55 tahun", 15, 55)]
 
 result_rows = []
 for age_label, lo, hi in age_ranges_amh:
-    sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
+    sub = df_ind[
+        (df_ind["r405"] == 1) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)
+    ].copy()
     row = {"Kelompok Umur": age_label}
     for mk in [0, 1]:
         mask = sub["mkako"] == mk
@@ -1437,7 +1515,9 @@ ws = get_ws("T27_AMH_Female")
 
 result_rows = []
 for age_label, lo, hi in age_ranges_amh:
-    sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
+    sub = df_ind[
+        (df_ind["r405"] == 2) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)
+    ].copy()
     row = {"Kelompok Umur": age_label}
     for mk in [0, 1]:
         mask = sub["mkako"] == mk
@@ -1484,29 +1564,95 @@ write_table(
 )
 
 # ============================================================
-# TABLE 29-31: HH Head Education by Gender and Poverty
+# TABLE 29: HH Head Education by Poverty (Laki-laki)
 # ============================================================
 
-ws = get_ws("T29_31_HHHead_Educ2")
-sub = df_ind[df_ind["r403"] == 1].copy()
+ws = get_ws("T29_HHHead_Educ_Male")
+sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 1)].copy()  # Male HH heads
+
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    for educ in educ_order:
-        row = {
-            "Jenis Kelamin KRT": "Laki-laki" if sex == 1 else "Perempuan",
-            "Pendidikan KRT": educ,
-        }
-        for mk in [0, 1]:
-            mask = (
-                (sub["r405"] == sex) & (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
-            )
-            row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
-        result_rows.append(row)
-df_t2931 = pd.DataFrame(result_rows).set_index(["Jenis Kelamin KRT", "Pendidikan KRT"])
+for educ in educ_order:
+    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    for mk in [0, 1]:
+        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t29 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
+# Calculate percentages (column-wise) ensuring sum = 100
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t29, n_cols, pct_cols, educ_order)
+df_t29 = df_t29[cols_order_mk]
 write_table(
     ws,
-    "Tabel 29-31. Pendidikan KRT Menurut Jenis Kelamin dan Status Kemiskinan",
-    df_t2931,
+    "Tabel 29. Persentase Kepala Rumah Tangga Laki-laki Menurut Status Miskin dan Pendidikan Tertinggi Yang Ditamatkan",
+    df_t29,
+)
+
+# ============================================================
+# TABLE 30: HH Head Education by Poverty (Perempuan)
+# ============================================================
+
+ws = get_ws("T30_HHHead_Educ_Female")
+sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2)].copy()  # Female HH heads
+
+result_rows = []
+for educ in educ_order:
+    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    for mk in [0, 1]:
+        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t30 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
+# Calculate percentages (column-wise) ensuring sum = 100
+calc_pct_ensure_100(df_t30, n_cols, pct_cols, educ_order)
+df_t30 = df_t30[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 30. Persentase Kepala Rumah Tangga Perempuan Menurut Status Miskin dan Pendidikan Tertinggi Yang Ditamatkan",
+    df_t30,
+)
+
+# ============================================================
+# TABLE 31: HH Head Education by Poverty (Total)
+# ============================================================
+
+ws = get_ws("T31_HHHead_Educ_Total")
+sub = df_ind[df_ind["r403"] == 1].copy()  # All HH heads
+
+result_rows = []
+for educ in educ_order:
+    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    for mk in [0, 1]:
+        mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+# Add Total row
+total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t31 = pd.DataFrame(result_rows).set_index("Pendidikan Tertinggi Yang Ditamatkan")
+# Calculate percentages (column-wise) ensuring sum = 100
+calc_pct_ensure_100(df_t31, n_cols, pct_cols, educ_order)
+df_t31 = df_t31[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 31. Persentase Kepala Rumah Tangga Menurut Status Miskin, Jenis Kelamin Dan Pendidikan Tertinggi Yang Ditamatkan",
+    df_t31,
 )
 
 # ============================================================
@@ -1860,9 +2006,7 @@ df_t56 = pd.DataFrame(result_rows).set_index("Penerima PKH")
 for col in df_t56.columns:
     total = df_t56[col].sum()
     df_t56[col.replace("N ", "% ")] = (df_t56[col] / total * 100).round(2)
-write_table(
-    ws, "Tabel 56. Penerima PKH Menurut Status Kemiskinan", df_t56
-)
+write_table(ws, "Tabel 56. Penerima PKH Menurut Status Kemiskinan", df_t56)
 
 # ============================================================
 # TABLE 57: BPNT/Sembako Recipient (r2005) by Poverty
