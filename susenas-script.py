@@ -336,12 +336,13 @@ df_ind["amh"] = np.where(
 )
 
 # Work status
-df_ind["tkerja"] = np.where(df_ind["r706"] == 0, 100, 0)
+# r705/r706 = NaN means "Tidak Bekerja" (not working)
+df_ind["tkerja"] = np.where(df_ind["r705"].isna(), 100, 0)
 df_ind["statuskerja"] = pd.cut(
-    df_ind["r707"], bins=[0, 2, 6], labels=["Informal", "Formal"]
+    df_ind["r706"], bins=[0, 2, 6], labels=["Informal", "Formal"]
 )
-df_ind.loc[df_ind["r707"].isin([3, 4]), "statuskerja"] = "Formal"
-df_ind.loc[df_ind["r707"].isin([1, 2, 5, 6]), "statuskerja"] = "Informal"
+df_ind.loc[df_ind["r706"].isin([3, 4]), "statuskerja"] = "Formal"
+df_ind.loc[df_ind["r706"].isin([1, 2, 5, 6]), "statuskerja"] = "Informal"
 df_ind["kformal"] = np.where(df_ind["statuskerja"] == "Formal", 100, 0)
 df_ind["kinformal"] = np.where(df_ind["statuskerja"] == "Informal", 100, 0)
 
@@ -1656,29 +1657,106 @@ write_table(
 )
 
 # ============================================================
-# TABLE 32-34: Employment (Formal/Informal) by Gender and Poverty (15+)
+# TABLE 32: Employment Status by Poverty (Laki-laki, 15+)
 # ============================================================
 
-ws = get_ws("T32_34_Employment_FI")
-sub = df_ind[df_ind["r407"] >= 15].copy()
+ws = get_ws("T32_Employment_Male")
+sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
+
+kerja_labels = ["Tidak Bekerja", "Bekerja di Sektor Formal", "Bekerja di Sektor Informal"]
+
 result_rows = []
-for sex in sorted(sub["r405"].dropna().unique()):
-    row = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
+for kerja in kerja_labels:
+    row = {"Status Bekerja": kerja}
     for mk in [0, 1]:
-        mask = (sub["r405"] == sex) & (sub["mkako"] == mk)
-        grp = sub[mask]
-        w = grp["fwt"]
-        row[f"% Tdk Kerja mkako={int(mk)}"] = round(weighted_mean(grp["tkerja"], w), 2)
-        row[f"% Formal mkako={int(mk)}"] = round(weighted_mean(grp["kformal"], w), 2)
-        row[f"% Informal mkako={int(mk)}"] = round(
-            weighted_mean(grp["kinformal"], w), 2
-        )
+        if kerja == "Tidak Bekerja":
+            mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
+        elif kerja == "Bekerja di Sektor Formal":
+            mask = (sub["statuskerja"] == "Formal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        else:
+            mask = (sub["statuskerja"] == "Informal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t3234 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
+total_row = {"Status Bekerja": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t32 = pd.DataFrame(result_rows).set_index("Status Bekerja")
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t32, n_cols, pct_cols, kerja_labels)
+df_t32 = df_t32[cols_order_mk]
 write_table(
     ws,
-    "Tabel 32-34. Status Kerja (Formal/Informal) Menurut Jenis Kelamin dan Status Kemiskinan (15+)",
-    df_t3234,
+    "Tabel 32. Persentase Penduduk Laki-laki Berumur 15 Tahun Keatas Menurut Status Bekerja dan Status Miskin",
+    df_t32,
+)
+
+# ============================================================
+# TABLE 33: Employment Status by Poverty (Perempuan, 15+)
+# ============================================================
+
+ws = get_ws("T33_Employment_Female")
+sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
+
+result_rows = []
+for kerja in kerja_labels:
+    row = {"Status Bekerja": kerja}
+    for mk in [0, 1]:
+        if kerja == "Tidak Bekerja":
+            mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
+        elif kerja == "Bekerja di Sektor Formal":
+            mask = (sub["statuskerja"] == "Formal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        else:
+            mask = (sub["statuskerja"] == "Informal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Status Bekerja": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t33 = pd.DataFrame(result_rows).set_index("Status Bekerja")
+calc_pct_ensure_100(df_t33, n_cols, pct_cols, kerja_labels)
+df_t33 = df_t33[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 33. Persentase Penduduk Perempuan Berumur 15 Tahun Keatas Menurut Status Bekerja dan Status Miskin",
+    df_t33,
+)
+
+# ============================================================
+# TABLE 34: Employment Status by Poverty (Total, 15+)
+# ============================================================
+
+ws = get_ws("T34_Employment_Total")
+sub = df_ind[df_ind["r407"] >= 15].copy()
+
+result_rows = []
+for kerja in kerja_labels:
+    row = {"Status Bekerja": kerja}
+    for mk in [0, 1]:
+        if kerja == "Tidak Bekerja":
+            mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
+        elif kerja == "Bekerja di Sektor Formal":
+            mask = (sub["statuskerja"] == "Formal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        else:
+            mask = (sub["statuskerja"] == "Informal") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+        row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+    result_rows.append(row)
+total_row = {"Status Bekerja": "Total"}
+for mk in [0, 1]:
+    mask = sub["mkako"] == mk
+    total_row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
+result_rows.append(total_row)
+df_t34 = pd.DataFrame(result_rows).set_index("Status Bekerja")
+calc_pct_ensure_100(df_t34, n_cols, pct_cols, kerja_labels)
+df_t34 = df_t34[cols_order_mk]
+write_table(
+    ws,
+    "Tabel 34. Persentase Penduduk Berumur 15 Tahun Keatas Menurut Jenis Kelamin, Status Bekerja dan Status Miskin",
+    df_t34,
 )
 
 # ============================================================
