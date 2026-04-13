@@ -2631,22 +2631,51 @@ write_table(
 )
 
 # ============================================================
-# TABLE 56: PKH Recipient (r2002) by Poverty
+# TABLE 56: Persentase Rumah Tangga Miskin yang Pernah Menjadi Penerima PKH dalam Setahun Terakhir
 # ============================================================
 
 ws = get_ws("T56_PKH")
 result_rows = []
-for r2002_val in sorted(df_rt["r2002"].dropna().unique()):
-    row: dict[str, Union[str, int, float]] = {"Penerima PKH": int(r2002_val)}
-    for mk in [0, 1]:
-        mask = (df_rt["r2002"] == r2002_val) & (df_rt["mkako"] == mk)
-        row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
+
+# Filter only poor households (mkako = 1)
+poor_households = df_rt[df_rt["mkako"] == 1]
+
+# Calculate weighted count for each r2002 value
+total_weight = poor_households["fwt"].sum()
+raw_pcts = []
+labels = []
+for r2002_val in sorted(poor_households["r2002"].dropna().unique()):
+    mask = poor_households["r2002"] == r2002_val
+    n_weighted = poor_households.loc[mask, "fwt"].sum()
+    pct_raw = n_weighted / total_weight * 100 if total_weight > 0 else 0.0
+    raw_pcts.append(pct_raw)
+    # Map r2002 values to labels (1=Ya, 5=Tidak based on Susenas coding)
+    label = "Ya" if r2002_val == 1 else "Tidak" if r2002_val == 5 else str(int(r2002_val))
+    labels.append(label)
+
+# Adjust percentages to ensure sum = 100
+adj_pcts = adjust_percentages(raw_pcts)
+
+for label, pct in zip(labels, adj_pcts):
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Pernah Menjadi Penerima PKH dalam Setahun Terakhir ?": label,
+        "Persentase": pct,
+    }
     result_rows.append(row)
-df_t56 = pd.DataFrame(result_rows).set_index("Penerima PKH")
-for col in df_t56.columns:
-    total = df_t56[col].sum()
-    df_t56[col.replace("N ", "% ")] = (df_t56[col] / total * 100).round(2)
-write_table(ws, "Tabel 56. Penerima PKH Menurut Status Kemiskinan", df_t56)
+
+# Add Total row
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Pernah Menjadi Penerima PKH dalam Setahun Terakhir ?": "Total",
+    "Persentase": 100.00,
+}
+result_rows.append(total_row)
+
+df_t56 = pd.DataFrame(result_rows).set_index("Apakah Pernah Menjadi Penerima PKH dalam Setahun Terakhir ?")
+write_table(
+    ws,
+    "Tabel 56. Persentase Rumah Tangga Miskin yang Pernah Menjadi Penerima PKH dalam Setahun Terakhir",
+    df_t56,
+)
 
 # ============================================================
 # TABLE 57: BPNT/Sembako Recipient (r2005) by Poverty
