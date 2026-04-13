@@ -3364,71 +3364,283 @@ write_notes(
 )
 
 # ============================================================
-# TABLE 62-63: Formal/Informal Employment with SE
+# TABLE 62: Relative Standard Error Persentase Penduduk Miskin
+#           Berusia 15 Tahun Ke Atas Menurut Status Bekerja
 # ============================================================
-
-ws = get_ws("T62_63_FormalInformal_SE")
+ws = get_ws("T62_StatusKerja_Miskin")
 result_rows = []
-for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    grp = sub[mask]
-    w = grp["fwt"]
-    n = w.sum()
-    for var, label in [
-        ("tkerja", "Tidak Bekerja"),
-        ("kformal", "Formal"),
-        ("kinformal", "Informal"),
-    ]:
-        mn = weighted_mean(grp[var], w)
-        se = np.sqrt(mn * (100 - mn) / n) if n > 0 and pd.notna(mn) else np.nan
-        result_rows.append(
-            {
-                "Status Kemiskinan": "Miskin" if mk == 1 else "Tidak Miskin",
-                "Indikator Kerja": label,
-                "Rata-rata (%)": round(mn, 2),
-                "SE": round(se, 4),
-                "CV": round(se / mn * 100, 2) if mn and mn > 0 else np.nan,
-            }
+
+for var, label in [
+    ("tkerja", "Tidak Bekerja"),
+    ("kformal", "Bekerja Di Sektor Formal"),
+    ("kinformal", "Bekerja Bukan Di Sektor Formal"),
+]:
+    subpop_mask = (
+        (df_ind["r407"] >= 15)
+        & (df_ind["r102"] == REGION_CODE)
+        & (df_ind["mkako"] == 1)
+    )
+
+    grp = df_ind[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp[var], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_ind,
+        value_var=var,
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
         )
-df_t6263 = pd.DataFrame(result_rows).set_index(["Status Kemiskinan", "Indikator Kerja"])
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "Status Bekerja": label,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t62 = pd.DataFrame(result_rows).set_index("Status Bekerja")
 write_table(
     ws,
-    "Tabel 62-63. Status Kerja (Formal/Informal) dengan SE Menurut Status Kemiskinan (15+)",
-    df_t6263,
+    "Tabel 62. Relative Standard Error Persentase Penduduk Miskin Berusia 15 Tahun Ke Atas Menurut Status Bekerja",
+    df_t62,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
 )
 
 # ============================================================
-# TABLE 64-65: Water & Sanitation with SE
+# TABLE 63: Relative Standard Error Persentase Penduduk Tidak Miskin
+#           Berusia 15 Tahun Ke Atas Menurut Status Bekerja
 # ============================================================
-
-ws = get_ws("T64_65_WaterSan_SE")
+ws = get_ws("T63_StatusKerja_TidakMiskin")
 result_rows = []
-for mk in [0, 1]:
-    mask = df_rt["mkako"] == mk
-    grp = df_rt[mask]
-    w = grp["fwt"]
-    n = w.sum()
-    for var, label in [
-        ("airmlayak", "Air Minum Layak"),
-        ("sab", "Air Bersih (SAB)"),
-        ("sal", "Sanitasi Layak"),
-    ]:
-        mn = weighted_mean(grp[var], w)
-        se = np.sqrt(mn * (100 - mn) / n) if n > 0 and pd.notna(mn) else np.nan
-        result_rows.append(
-            {
-                "Status Kemiskinan": "Miskin" if mk == 1 else "Tidak Miskin",
-                "Indikator": label,
-                "Rata-rata (%)": round(mn, 2),
-                "SE": round(se, 4),
-                "CV": round(se / mn * 100, 2) if mn and mn > 0 else np.nan,
-            }
+
+for var, label in [
+    ("tkerja", "Tidak Bekerja"),
+    ("kformal", "Bekerja Di Sektor Formal"),
+    ("kinformal", "Bekerja Bukan Di Sektor Formal"),
+]:
+    subpop_mask = (
+        (df_ind["r407"] >= 15)
+        & (df_ind["r102"] == REGION_CODE)
+        & (df_ind["mkako"] == 0)
+    )
+
+    grp = df_ind[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp[var], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_ind,
+        value_var=var,
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
         )
-df_t6465 = pd.DataFrame(result_rows).set_index(["Status Kemiskinan", "Indikator"])
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "Status Bekerja": label,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t63 = pd.DataFrame(result_rows).set_index("Status Bekerja")
 write_table(
     ws,
-    "Tabel 64-65. Akses Air dan Sanitasi dengan SE Menurut Status Kemiskinan",
-    df_t6465,
+    "Tabel 63. Relative Standard Error Persentase Penduduk Tidak Miskin Berusia 15 Tahun Ke Atas Menurut Status Bekerja",
+    df_t63,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
+)
+
+# ============================================================
+# TABLE 64: Relative Standard Error Beberapa Variabel Perumahan
+#           Rumah Tangga Miskin
+# ============================================================
+ws = get_ws("T64_Perumahan_Miskin")
+result_rows = []
+
+for var, label in [
+    ("airmlayak", "Persentase Rumah Tangga Yang Menggunakan Air Minum Layak"),
+    ("sab", "Persentase Rumah Tangga Yang Menggunakan Air Minum Bersih"),
+    ("sal", "Persentase Rumah Tangga Terhadap Akses Sanitasi Layak"),
+]:
+    subpop_mask = df_rt["mkako"] == 1
+
+    grp = df_rt[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp[var], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_rt,
+        value_var=var,
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
+        )
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "Variabel Perumahan": label,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t64 = pd.DataFrame(result_rows).set_index("Variabel Perumahan")
+write_table(
+    ws,
+    "Tabel 64. Relative Standard Error Beberapa Variabel Perumahan Rumah Tangga Miskin",
+    df_t64,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
+)
+
+# ============================================================
+# TABLE 65: Relative Standard Error Beberapa Variabel Perumahan
+#           Rumah Tangga Tidak Miskin
+# ============================================================
+ws = get_ws("T65_Perumahan_TidakMiskin")
+result_rows = []
+
+for var, label in [
+    ("airmlayak", "Persentase Rumah Tangga Yang Menggunakan Air Minum Layak"),
+    ("sab", "Persentase Rumah Tangga Yang Menggunakan Air Minum Bersih"),
+    ("sal", "Persentase Rumah Tangga Terhadap Akses Sanitasi Layak"),
+]:
+    subpop_mask = df_rt["mkako"] == 0
+
+    grp = df_rt[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp[var], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_rt,
+        value_var=var,
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
+        )
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "Variabel Perumahan": label,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t65 = pd.DataFrame(result_rows).set_index("Variabel Perumahan")
+write_table(
+    ws,
+    "Tabel 65. Relative Standard Error Beberapa Variabel Perumahan Rumah Tangga Tidak Miskin",
+    df_t65,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
 )
 
 # ============================================================
