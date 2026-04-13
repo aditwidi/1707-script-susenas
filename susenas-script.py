@@ -99,26 +99,18 @@ def thin_border():
 
 
 def calc_pct_ensure_100(df, n_cols, pct_cols, row_order, total_label="Total"):
-    """
-    Calculate percentages ensuring they sum to exactly 100.
-    - df: DataFrame with index including row_order and total_label
-    - n_cols: list of N column names (e.g., ["N mkako=0", "N mkako=1"])
-    - pct_cols: list of % column names (e.g., ["% mkako=0", "% mkako=1"])
-    - row_order: list of row labels (excluding Total)
-    - total_label: the total row label
-    """
     for n_col, pct_col in zip(n_cols, pct_cols):
         total_n = df.loc[total_label, n_col]
         if total_n > 0:
             pct_sum = 0
-            # Calculate for all except last
-            for idx in row_order[:-1]:
+            for idx in row_order:
                 pct = round(df.loc[idx, n_col] / total_n * 100, 2)
                 df.loc[idx, pct_col] = pct
                 pct_sum += pct
-            # Last item: ensure sum = 100
-            df.loc[row_order[-1], pct_col] = round(100 - pct_sum, 2)
-            # Total row
+            rounding_error = round(100 - pct_sum, 2)
+            if rounding_error != 0:
+                max_pct_idx = max(row_order, key=lambda x: df.loc[x, pct_col])
+                df.loc[max_pct_idx, pct_col] = round(df.loc[max_pct_idx, pct_col] + rounding_error, 2)
             df.loc[total_label, pct_col] = 100.00
 
 
@@ -434,20 +426,23 @@ df_rt.loc[(df_rt["r1610a"].isin([4, 5, 7])) & (df_rt["r1610c"] == 2), "sab"] = 1
 # Floor area per capita (moved from r1804 to r1604)
 df_rt["lkapita"] = df_rt["r1604"] / df_rt["r301"]
 df_rt["klkapita"] = pd.cut(
-    df_rt["lkapita"], bins=[-1, 7.2, 9999], labels=["<=7,2 m2", ">7,2 m2"]
+    df_rt["lkapita"], bins=[-1, 7.2, 9999], labels=["≤ 7,2 m2", "> 7,2 m2"]
 )
 
 
 # Roof type (moved from r1806a to r1606)
+# Mapping: 1=Beton, 2=Genteng, 3=Seng, 4=Kayu/sirap, 5=Asbes, 
+#          6=Bambu/jerami/ijuk/daun-daunan/rumbia, 7=Lainnya
 def recode_atap(x):
     if x in [1, 2]:
         return "Beton/Genteng"
     elif x == 3:
         return "Seng"
-    elif x == 4:
+    elif x == 5:
         return "Asbes"
-    else:
-        return "Bambu/kayu/jerami/lainnya"
+    elif x in [4, 6, 7]:
+        return "Bambu/kayu/sirap/jerami/ijuk/daun-daunan/rumbia/lainnya"
+    return np.nan
 
 
 df_rt["katap"] = df_rt["r1606"].apply(recode_atap)
@@ -2105,25 +2100,35 @@ write_table(ws, "Tabel 45. Persentase Rumah Tangga Menurut Status Kepemilikan Ru
 # ============================================================
 
 ws = get_ws("T46_FloorArea")
+
+luas_labels = ["≤ 7,2 m2", "> 7,2 m2"]
+
 result_rows = []
-for klk in ["<=7,2 m2", ">7,2 m2"]:
-    row = {"Luas Lantai per Kapita": klk}
+for klk in luas_labels:
+    row = {"Luas Lantai Rumah per Kapita": klk}
     for mk in [0, 1]:
         mask = (df_rt["klkapita"].astype(str) == klk) & (df_rt["mkako"] == mk)
-        row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
+        row[f"N mkako={mk}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t46 = pd.DataFrame(result_rows).set_index("Luas Lantai per Kapita")
-for col in df_t46.columns:
-    total = df_t46[col].sum()
-    df_t46[col.replace("N ", "% ")] = (df_t46[col] / total * 100).round(2)
-write_table(ws, "Tabel 46. Luas Lantai per Kapita Menurut Status Kemiskinan", df_t46)
+
+total_row = {"Luas Lantai Rumah per Kapita": "Total"}
+for mk in [0, 1]:
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
+result_rows.append(total_row)
+
+df_t46 = pd.DataFrame(result_rows).set_index("Luas Lantai Rumah per Kapita")
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t46, n_cols, pct_cols, luas_labels)
+df_t46 = df_t46[cols_order_mk]
+write_table(ws, "Tabel 46. Persentase Rumah Tangga Menurut Luas Lantai Rumah per Kapita dan Status Miskin", df_t46)
 
 # ============================================================
 # TABLE 47: Roof Type by Poverty
 # ============================================================
 
 ws = get_ws("T47_RoofType")
-roof_cats = ["Beton/Genteng", "Seng", "Asbes", "Bambu/kayu/jerami/lainnya"]
+roof_cats = ["Beton/Genteng", "Seng", "Asbes", "Bambu/kayu/sirap/jerami/ijuk/daun-daunan/rumbia/lainnya"]
 result_rows = []
 for rk in roof_cats:
     row = {"Jenis Atap": rk}
@@ -2131,11 +2136,17 @@ for rk in roof_cats:
         mask = (df_rt["katap"] == rk) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
+# Add Total row
+total_row = {"Jenis Atap": "Total"}
+for mk in [0, 1]:
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
+result_rows.append(total_row)
 df_t47 = pd.DataFrame(result_rows).set_index("Jenis Atap")
-for col in df_t47.columns:
-    total = df_t47[col].sum()
-    df_t47[col.replace("N ", "% ")] = (df_t47[col] / total * 100).round(2)
-write_table(ws, "Tabel 47. Jenis Atap Rumah Terluas Menurut Status Kemiskinan", df_t47)
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t47, n_cols, pct_cols, roof_cats)
+df_t47 = df_t47[cols_order_mk]
+write_table(ws, "Tabel 47. Persentase Rumah Tangga Menurut Jenis Atap dan Status Miskin", df_t47)
 
 # ============================================================
 # TABLE 48: Wall Type by Poverty
