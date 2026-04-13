@@ -5,10 +5,11 @@
 # ============================================================
 
 import warnings
+from typing import Union
 
 import numpy as np
 import pandas as pd
-import simpledbf
+import simpledbf  # type: ignore[import-untyped]
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -138,6 +139,7 @@ def write_table(ws, title, df, start_row=1):
         style_header(c)
 
     # Data rows
+    ri = header_row  # Initialize ri in case DataFrame is empty
     for ri, (idx, row) in enumerate(df.iterrows(), start=header_row + 1):
         lc = ws.cell(row=ri, column=1, value=str(idx))
         style_label(lc)
@@ -211,7 +213,7 @@ df_kp43["p2kako"] = np.where(
 
 # Decile ranking (Ntile 10)
 df_kp43["nkapita"] = (
-    pd.qcut(df_kp43["kapita"], q=10, labels=False, duplicates="drop") + 1
+    pd.qcut(df_kp43["kapita"], q=10, labels=False, duplicates="drop") + 1  # type: ignore[operator]
 )
 
 # World Bank 40-40-20 grouping
@@ -403,9 +405,9 @@ df_rt.loc[mask1 | mask2, "sal"] = 100
 
 
 df_rt["airmlayak"] = 0
-good_src = {3, 4, 5, 7, 10}
-bad_src = {1, 2}
-other_src = {6, 8, 9, 11}
+good_src = [3, 4, 5, 7, 10]  # type: ignore[assignment]
+bad_src = [1, 2]
+other_src = [6, 8, 9, 11]
 
 mask = (df_rt["r1610a"].isin(good_src)) & (df_rt["r1614a"].isin(good_src))
 df_rt.loc[mask, "airmlayak"] = 100
@@ -466,15 +468,17 @@ df_rt["kdinding"] = df_rt["r1607"].apply(recode_dinding)
 
 
 # Floor type (moved from r1808 to r1608)
+# Codes: 1=Marmer/granit, 2=Keramik/ubin/tegel/teraso, 3=Parket/vinil/karpet,
+#        4=Kayu/papan, 5=Semen/bata merah, 6=Bambu/tanah, 7=Lainnya
 def recode_lantai(x):
-    if 1 <= x <= 3:
-        return "Marmer/Granit/Keramik/Parket/Vinil/Karpet"
+    if x in [1, 3]:
+        return "Marmer/Granit/Parket/Vinil/Karpet"
+    elif x == 2:
+        return "Keramik/Ubin/Tegel/Teraso"
     elif x == 4:
-        return "Ubin/Tegel/Teraso"
-    elif x == 5:
         return "Kayu/Papan"
-    else:
-        return "Semen/Bata/Bambu/Tanah/Lainnya"
+    else:  # 5, 6, 7
+        return "Lainnya (Semen/Bata Merah/Bambu/Tanah/Lainnya)"
 
 
 df_rt["klantai"] = df_rt["r1608"].apply(recode_lantai)
@@ -568,13 +572,13 @@ ws = get_ws("T2_Gender")
 sub = df_ind.copy()
 result_rows = []
 for sex_val in sorted(sub["r405"].dropna().unique()):
-    row = {"Jenis Kelamin": "Laki-laki" if sex_val == 1 else "Perempuan"}
+    row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Laki-laki" if sex_val == 1 else "Perempuan"}
     for mk_val in [0, 1]:
         grp = sub[(sub["r405"] == sex_val) & (sub["mkako"] == mk_val)]
-        row[f"N mkako={int(mk_val)}"] = round(grp["fwt"].sum(), 0)
+        row[f"N mkako={int(mk_val)}"] = float(round(grp["fwt"].sum(), 0))
     result_rows.append(row)
 # Add Total row
-total_row = {"Jenis Kelamin": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Total"}
 for mk_val in [0, 1]:
     total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
@@ -598,13 +602,13 @@ sub = df_ind[df_ind["r405"] == 1].copy()  # Laki-laki
 result_rows = []
 age_labels = ["0-14", "15-64", "65+"]
 for age_grp in age_labels:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk_val in [0, 1]:
         mask = (sub["kelum1"].astype(str) == age_grp) & (sub["mkako"] == mk_val)
         row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Kelompok Umur": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
     total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
@@ -628,13 +632,13 @@ ws = get_ws("T4_AgeGroup_Female")
 sub = df_ind[df_ind["r405"] == 2].copy()  # Perempuan
 result_rows = []
 for age_grp in age_labels:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk_val in [0, 1]:
         mask = (sub["kelum1"].astype(str) == age_grp) & (sub["mkako"] == mk_val)
         row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Kelompok Umur": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
     total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
@@ -656,13 +660,13 @@ ws = get_ws("T5_AgeGroup_Total")
 sub = df_ind.copy()  # All genders
 result_rows = []
 for age_grp in age_labels:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk_val in [0, 1]:
         mask = (sub["kelum1"].astype(str) == age_grp) & (sub["mkako"] == mk_val)
         row[f"N mkako={int(mk_val)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Kelompok Umur": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
     total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
 result_rows.append(total_row)
@@ -692,7 +696,7 @@ result_rows = []
 for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for age_grp in age_groups:
-        row = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
         for mk in [0, 1]:
             mask = (
                 (sub["r404"] == marital_val)
@@ -721,7 +725,7 @@ for marital_val in [1, 2, 3, 4]:
                 )
 
 # Add single Total row showing 100 for each column
-total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
 for mk in [0, 1]:
     total_row[f"% mkako={mk}"] = 100.00
     total_row[f"N mkako={mk}"] = ""
@@ -750,7 +754,7 @@ result_rows = []
 for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for age_grp in age_groups:
-        row = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
         for mk in [0, 1]:
             mask = (
                 (sub["r404"] == marital_val)
@@ -777,7 +781,7 @@ for marital_val in [1, 2, 3, 4]:
                 )
 
 # Add single Total row showing 100 for each column
-total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
 for mk in [0, 1]:
     total_row[f"% mkako={mk}"] = 100.00
     total_row[f"N mkako={mk}"] = ""
@@ -802,7 +806,7 @@ result_rows = []
 for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for age_grp in age_groups:
-        row = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
         for mk in [0, 1]:
             mask = (
                 (sub["r404"] == marital_val)
@@ -829,7 +833,7 @@ for marital_val in [1, 2, 3, 4]:
                 )
 
 # Add single Total row showing 100 for each column
-total_row = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
 for mk in [0, 1]:
     total_row[f"% mkako={mk}"] = 100.00
     total_row[f"N mkako={mk}"] = ""
@@ -851,13 +855,13 @@ ws = get_ws("T9_HHHead_Gender")
 sub = df_ind[df_ind["r403"] == 1].copy()
 result_rows = []
 for sex in sorted(sub["r405"].dropna().unique()):
-    row = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
+    row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
     for mk in [0, 1]:
         mask = (sub["r405"] == sex) & (sub["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Jenis Kelamin": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={int(mk)}"] = sum(r[f"N mkako={int(mk)}"] for r in result_rows)
 result_rows.append(total_row)
@@ -901,13 +905,13 @@ marital_order = [1, 2, 3, 4]
 
 result_rows = []
 for marital_val in marital_order:
-    row = {"Status Perkawinan": marital_labels[marital_val]}
+    row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_labels[marital_val]}
     for mk in [0, 1]:
         mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Status Perkawinan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -948,13 +952,13 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2)].copy()  # Perempuan
 
 result_rows = []
 for marital_val in marital_order:
-    row = {"Status Perkawinan": marital_labels[marital_val]}
+    row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_labels[marital_val]}
     for mk in [0, 1]:
         mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Status Perkawinan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -990,13 +994,13 @@ sub = df_ind[df_ind["r403"] == 1].copy()  # All household heads
 
 result_rows = []
 for marital_val in marital_order:
-    row = {"Status Perkawinan": marital_labels[marital_val]}
+    row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_labels[marital_val]}
     for mk in [0, 1]:
         mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Status Perkawinan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1035,13 +1039,13 @@ age_labels = ["15-24", "25-44", "45-64", "65+"]
 
 result_rows = []
 for age_grp in age_labels:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk in [0, 1]:
         mask = (sub["kelum3"].astype(str) == age_grp) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Kelompok Umur": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1079,13 +1083,13 @@ sub = df_ind[
 
 result_rows = []
 for age_grp in age_labels:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk in [0, 1]:
         mask = (sub["kelum3"].astype(str) == age_grp) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Kelompok Umur": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1119,13 +1123,13 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for age_grp in age_labels:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk in [0, 1]:
         mask = (sub["kelum3"].astype(str) == age_grp) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Kelompok Umur": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1159,13 +1163,13 @@ sub = df_ind[df_ind["r403"] == 1].copy()
 jart_labels = ["1-3", "4-6", ">=7"]
 result_rows = []
 for jart in jart_labels:
-    row = {"Jumlah ART": jart}
+    row: dict[str, Union[str, int, float]] = {"Jumlah ART": jart}
     for mk in [0, 1]:
         mask = (sub["keljart"] == jart) & (sub["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row (sum of rounded values for consistency)
-total_row = {"Jumlah ART": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Jumlah ART": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1198,13 +1202,13 @@ r611_order = [1, 2, 3]
 
 result_rows = []
 for r611_val in r611_order:
-    row = {"Status Pendidikan": r611_labels[r611_val]}
+    row: dict[str, Union[str, int, float]] = {"Status Pendidikan": r611_labels[r611_val]}
     for mk in [0, 1]:
         mask = (sub["r611"] == r611_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Status Pendidikan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Pendidikan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1232,13 +1236,13 @@ sub = df_ind[
 
 result_rows = []
 for r611_val in r611_order:
-    row = {"Status Pendidikan": r611_labels[r611_val]}
+    row: dict[str, Union[str, int, float]] = {"Status Pendidikan": r611_labels[r611_val]}
     for mk in [0, 1]:
         mask = (sub["r611"] == r611_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Status Pendidikan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Pendidikan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1261,13 +1265,13 @@ sub = df_ind[(df_ind["r407"] >= 5) & (df_ind["r407"] <= 24)].copy()
 
 result_rows = []
 for r611_val in r611_order:
-    row = {"Status Pendidikan": r611_labels[r611_val]}
+    row: dict[str, Union[str, int, float]] = {"Status Pendidikan": r611_labels[r611_val]}
     for mk in [0, 1]:
         mask = (sub["r611"] == r611_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Status Pendidikan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Pendidikan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1290,13 +1294,13 @@ sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for educ in educ_order:
-    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1321,13 +1325,13 @@ sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for educ in educ_order:
-    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1350,13 +1354,13 @@ sub = df_ind[df_ind["r407"] >= 15].copy()
 
 result_rows = []
 for educ in educ_order:
-    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1382,7 +1386,7 @@ age_groups_aps = ["7-12", "13-15", "16-18"]
 
 result_rows = []
 for age_grp in age_groups_aps:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk in [0, 1]:
         mask = (sub["kelum4"].astype(str) == age_grp) & (sub["mkako"] == mk)
         grp = sub[mask]
@@ -1413,7 +1417,7 @@ sub = df_ind[
 
 result_rows = []
 for age_grp in age_groups_aps:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk in [0, 1]:
         mask = (sub["kelum4"].astype(str) == age_grp) & (sub["mkako"] == mk)
         grp = sub[mask]
@@ -1440,7 +1444,7 @@ sub = df_ind[(df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
 
 result_rows = []
 for age_grp in age_groups_aps:
-    row = {"Kelompok Umur": age_grp}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_grp}
     for mk in [0, 1]:
         mask = (sub["kelum4"].astype(str) == age_grp) & (sub["mkako"] == mk)
         grp = sub[mask]
@@ -1470,7 +1474,7 @@ for age_label, lo, hi in age_ranges_amh:
     sub = df_ind[
         (df_ind["r405"] == 1) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)
     ].copy()
-    row = {"Kelompok Umur": age_label}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_label}
     for mk in [0, 1]:
         mask = sub["mkako"] == mk
         grp = sub[mask]
@@ -1500,7 +1504,7 @@ for age_label, lo, hi in age_ranges_amh:
     sub = df_ind[
         (df_ind["r405"] == 2) & (df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)
     ].copy()
-    row = {"Kelompok Umur": age_label}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_label}
     for mk in [0, 1]:
         mask = sub["mkako"] == mk
         grp = sub[mask]
@@ -1527,7 +1531,7 @@ ws = get_ws("T28_AMH_Total")
 result_rows = []
 for age_label, lo, hi in age_ranges_amh:
     sub = df_ind[(df_ind["r407"] >= lo) & (df_ind["r407"] <= hi)].copy()
-    row = {"Kelompok Umur": age_label}
+    row: dict[str, Union[str, int, float]] = {"Kelompok Umur": age_label}
     for mk in [0, 1]:
         mask = sub["mkako"] == mk
         grp = sub[mask]
@@ -1554,13 +1558,13 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 1)].copy()  # Male HH he
 
 result_rows = []
 for educ in educ_order:
-    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1585,13 +1589,13 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2)].copy()  # Female HH 
 
 result_rows = []
 for educ in educ_order:
-    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1614,13 +1618,13 @@ sub = df_ind[df_ind["r403"] == 1].copy()  # All HH heads
 
 result_rows = []
 for educ in educ_order:
-    row = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1649,7 +1653,7 @@ kerja_labels = [
 
 result_rows = []
 for kerja in kerja_labels:
-    row = {"Status Bekerja": kerja}
+    row: dict[str, Union[str, int, float]] = {"Status Bekerja": kerja}
     for mk in [0, 1]:
         if kerja == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
@@ -1667,7 +1671,7 @@ for kerja in kerja_labels:
             )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Status Bekerja": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Bekerja": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1691,7 +1695,7 @@ sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for kerja in kerja_labels:
-    row = {"Status Bekerja": kerja}
+    row: dict[str, Union[str, int, float]] = {"Status Bekerja": kerja}
     for mk in [0, 1]:
         if kerja == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
@@ -1709,7 +1713,7 @@ for kerja in kerja_labels:
             )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Status Bekerja": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Bekerja": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1731,7 +1735,7 @@ sub = df_ind[df_ind["r407"] >= 15].copy()
 
 result_rows = []
 for kerja in kerja_labels:
-    row = {"Status Bekerja": kerja}
+    row: dict[str, Union[str, int, float]] = {"Status Bekerja": kerja}
     for mk in [0, 1]:
         if kerja == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
@@ -1749,7 +1753,7 @@ for kerja in kerja_labels:
             )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Status Bekerja": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Bekerja": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1773,7 +1777,7 @@ sektor_labels = ["Tidak Bekerja", "Bekerja di Sektor Pertanian", "Bekerja Bukan 
 
 result_rows = []
 for sektor in sektor_labels:
-    row = {"Sektor Bekerja": sektor}
+    row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": sektor}
     for mk in [0, 1]:
         if sektor == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
@@ -1783,7 +1787,7 @@ for sektor in sektor_labels:
             mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Sektor Bekerja": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1805,7 +1809,7 @@ sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for sektor in sektor_labels:
-    row = {"Sektor Bekerja": sektor}
+    row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": sektor}
     for mk in [0, 1]:
         if sektor == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
@@ -1815,7 +1819,7 @@ for sektor in sektor_labels:
             mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Sektor Bekerja": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1837,7 +1841,7 @@ sub = df_ind[df_ind["r407"] >= 15].copy()
 
 result_rows = []
 for sektor in sektor_labels:
-    row = {"Sektor Bekerja": sektor}
+    row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": sektor}
     for mk in [0, 1]:
         if sektor == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
@@ -1847,7 +1851,7 @@ for sektor in sektor_labels:
             mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Sektor Bekerja": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1871,13 +1875,13 @@ jkn_labels = ["Ya", "Tidak"]
 
 result_rows = []
 for jkn in jkn_labels:
-    row = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
     for mk in [0, 1]:
         jkn_val = 1 if jkn == "Ya" else 0
         mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1901,13 +1905,13 @@ sub = df_ind[df_ind["r405"] == 2].copy()
 
 result_rows = []
 for jkn in jkn_labels:
-    row = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
     for mk in [0, 1]:
         jkn_val = 1 if jkn == "Ya" else 0
         mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1929,13 +1933,13 @@ sub = df_ind.copy()
 
 result_rows = []
 for jkn in jkn_labels:
-    row = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
     for mk in [0, 1]:
         jkn_val = 1 if jkn == "Ya" else 0
         mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1959,12 +1963,12 @@ rokok_labels = ["Ya, setiap hari", "Ya, tidak setiap hari", "Tidak/Tidak Tahu"]
 
 result_rows = []
 for rk in rokok_labels:
-    row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
     for mk in [0, 1]:
         mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1988,12 +1992,12 @@ sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 5)].copy()
 
 result_rows = []
 for rk in rokok_labels:
-    row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
     for mk in [0, 1]:
         mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2015,12 +2019,12 @@ sub = df_ind[df_ind["r407"] >= 5].copy()
 
 result_rows = []
 for rk in rokok_labels:
-    row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
     for mk in [0, 1]:
         mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2040,21 +2044,21 @@ write_table(
 ws = get_ws("T44_Water_Sanitation")
 result_rows = []
 
-row = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Layak"}
+row: dict[str, Union[str, int, float]] = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Layak"}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
     row[f"% mkako={mk}"] = round(weighted_mean(grp["airmlayak"], w), 2)
 result_rows.append(row)
 
-row = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Bersih"}
+row: dict[str, Union[str, int, float]] = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Bersih"}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
     row[f"% mkako={mk}"] = round(weighted_mean(grp["sab"], w), 2)
 result_rows.append(row)
 
-row = {"Penggunaan Air Minum dan Sanitasi": "Sanitasi Layak"}
+row: dict[str, Union[str, int, float]] = {"Penggunaan Air Minum dan Sanitasi": "Sanitasi Layak"}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
@@ -2079,13 +2083,13 @@ kepemilikan_order = [1, 2, 3, 4]
 
 result_rows = []
 for val in kepemilikan_order:
-    row = {"Status Kepemilikan Rumah": kepemilikan_labels[val]}
+    row: dict[str, Union[str, int, float]] = {"Status Kepemilikan Rumah": kepemilikan_labels[val]}
     for mk in [0, 1]:
         mask = (df_rt["r1602"] == val) & (df_rt["mkako"] == mk)
         row[f"N mkako={mk}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 
-total_row = {"Status Kepemilikan Rumah": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Status Kepemilikan Rumah": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2107,13 +2111,13 @@ luas_labels = ["≤ 7,2 m2", "> 7,2 m2"]
 
 result_rows = []
 for klk in luas_labels:
-    row = {"Luas Lantai Rumah per Kapita": klk}
+    row: dict[str, Union[str, int, float]] = {"Luas Lantai Rumah per Kapita": klk}
     for mk in [0, 1]:
         mask = (df_rt["klkapita"].astype(str) == klk) & (df_rt["mkako"] == mk)
         row[f"N mkako={mk}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 
-total_row = {"Luas Lantai Rumah per Kapita": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Luas Lantai Rumah per Kapita": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2133,12 +2137,12 @@ ws = get_ws("T47_RoofType")
 roof_cats = ["Beton/Genteng", "Seng", "Asbes", "Bambu/kayu/sirap/jerami/ijuk/daun-daunan/rumbia/lainnya"]
 result_rows = []
 for rk in roof_cats:
-    row = {"Jenis Atap": rk}
+    row: dict[str, Union[str, int, float]] = {"Jenis Atap": rk}
     for mk in [0, 1]:
         mask = (df_rt["katap"] == rk) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Jenis Atap": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Jenis Atap": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2157,12 +2161,12 @@ ws = get_ws("T48_WallType")
 wall_cats = ["Tembok", "Plesteran Anyaman Bambu/Kawat", "Kayu/Papan", "Lainnya (Anyaman Bambu/batang kayu/bamboo/lainnya)"]
 result_rows = []
 for wk in wall_cats:
-    row = {"Jenis Dinding": wk}
+    row: dict[str, Union[str, int, float]] = {"Jenis Dinding": wk}
     for mk in [0, 1]:
         mask = (df_rt["kdinding"] == wk) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row = {"Jenis Dinding": "Total"}
+total_row: dict[str, Union[str, int, float]] = {"Jenis Dinding": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2179,24 +2183,30 @@ write_table(ws, "Tabel 48. Persentase Rumah Tangga Menurut Jenis Dinding dan Sta
 
 ws = get_ws("T49_FloorType")
 floor_cats = [
-    "Marmer/Granit/Keramik/Parket/Vinil/Karpet",
-    "Ubin/Tegel/Teraso",
+    "Marmer/Granit/Parket/Vinil/Karpet",
+    "Keramik/Ubin/Tegel/Teraso",
     "Kayu/Papan",
-    "Semen/Bata/Bambu/Tanah/Lainnya",
+    "Lainnya (Semen/Bata Merah/Bambu/Tanah/Lainnya)",
 ]
 result_rows = []
 for fk in floor_cats:
-    row = {"Jenis Lantai": fk}
+    row: dict[str, Union[str, int, float]] = {"Jenis Lantai": fk}
     for mk in [0, 1]:
         mask = (df_rt["klantai"] == fk) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
+total_row: dict[str, Union[str, int, float]] = {"Jenis Lantai": "Total"}
+for mk in [0, 1]:
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
+result_rows.append(total_row)
 df_t49 = pd.DataFrame(result_rows).set_index("Jenis Lantai")
-for col in df_t49.columns:
-    total = df_t49[col].sum()
-    df_t49[col.replace("N ", "% ")] = (df_t49[col] / total * 100).round(2)
+# Calculate percentages
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t49, n_cols, pct_cols, floor_cats)
+df_t49 = df_t49[cols_order_mk]
 write_table(
-    ws, "Tabel 49. Jenis Lantai Rumah Terluas Menurut Status Kemiskinan", df_t49
+    ws, "Tabel 49. Persentase Rumah Tangga Menurut Jenis Lantai dan Status Miskin", df_t49
 )
 
 # ============================================================
@@ -2207,7 +2217,7 @@ ws = get_ws("T50_Electricity")
 elec_cats = ["Listrik PLN", "Listrik Non PLN", "Bukan listrik"]
 result_rows = []
 for ek in elec_cats:
-    row = {"Sumber Penerangan": ek}
+    row: dict[str, Union[str, int, float]] = {"Sumber Penerangan": ek}
     for mk in [0, 1]:
         mask = (df_rt["klistrik"] == ek) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
@@ -2225,7 +2235,7 @@ write_table(ws, "Tabel 50. Sumber Penerangan Utama Menurut Status Kemiskinan", d
 ws = get_ws("T51_53_FoodShare")
 result_rows = []
 for sex in sorted(df_ind["r405"].dropna().unique()):
-    row = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
+    row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
     for mk in [0, 1]:
         mask = (df_ind["r405"] == sex) & (df_ind["mkako"] == mk)
         grp = df_ind[mask]
@@ -2314,7 +2324,7 @@ write_table(
 ws = get_ws("T56_PKH")
 result_rows = []
 for r2002_val in sorted(df_rt["r2002"].dropna().unique()):
-    row = {"Penerima PKH": int(r2002_val)}
+    row: dict[str, Union[str, int, float]] = {"Penerima PKH": int(r2002_val)}
     for mk in [0, 1]:
         mask = (df_rt["r2002"] == r2002_val) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
@@ -2332,7 +2342,7 @@ write_table(ws, "Tabel 56. Penerima PKH Menurut Status Kemiskinan", df_t56)
 ws = get_ws("T57_BPNT")
 result_rows = []
 for r2005_val in sorted(df_rt["r2005"].dropna().unique()):
-    row = {"Penerima BPNT/Sembako": int(r2005_val)}
+    row: dict[str, Union[str, int, float]] = {"Penerima BPNT/Sembako": int(r2005_val)}
     for mk in [0, 1]:
         mask = (df_rt["r2005"] == r2005_val) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
