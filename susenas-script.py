@@ -49,6 +49,102 @@ def weighted_count(values, weights):
     return weights[mask].sum()
 
 
+def complex_sample_se_mean(
+    df_full,
+    value_var,
+    weight_var,
+    subpop_mask=None,
+    strata_var="strata",
+    cluster_var="psu",
+):
+    """
+    Calculate standard error for weighted mean using stratified cluster sampling (WR estimator).
+    Matches SPSS CSDESCRIPTIVES with /SRSESTIMATOR TYPE=WR and /ESTIMATOR TYPE=WR.
+
+    Formula:
+        z_hij  = w_hij * y_hij
+        z_hi   = Σ_j z_hij          (weighted total per PSU)
+        z̄_h   = Σ_i z_hi / n_h     (mean of PSU totals in stratum h)
+        S_h²   = Σ_i (z_hi - z̄_h)² / (n_h - 1)
+        U_h    = n_h * S_h²          (WR variance contribution)
+        V(Ŷ)  = Σ_h U_h
+        V(ȳ)  = V(Ŷ) / W²
+        SE(ȳ) = √V(ȳ)
+
+    Parameters:
+    -----------
+    df_full     : pd.DataFrame
+                  Full sample dataframe (all observations in the design)
+    value_var   : str
+                  Variable to calculate mean for
+    weight_var  : str
+                  Weight variable (e.g., 'fwt')
+    subpop_mask : pd.Series of bool, optional
+                  Boolean mask for subpopulation (if None, uses full sample)
+    strata_var  : str
+                  Strata variable (default: 'strata')
+    cluster_var : str
+                  PSU/cluster variable (default: 'psu')
+
+    Returns:
+    --------
+    float : Standard error of the weighted mean
+    """
+    # Apply subpopulation filter if provided
+    df_subpop = (
+        df_full[subpop_mask].copy() if subpop_mask is not None else df_full.copy()
+    )
+
+    # Filter valid observations
+    valid_mask = df_subpop[value_var].notna() & df_subpop[weight_var].notna()
+    df_valid = df_subpop[valid_mask].copy()
+
+    if len(df_valid) == 0:
+        return np.nan
+
+    # Total weight W for subpopulation
+    total_weight = df_valid[weight_var].sum()
+    if total_weight == 0:
+        return np.nan
+
+    # Get all unique PSUs per stratum from FULL SAMPLE (design-based)
+    all_strata_psus = df_full.groupby(strata_var)[cluster_var].apply(
+        lambda x: x.dropna().unique()
+    )
+
+    # Calculate V(Ŷ) = Σ_h U_h
+    v_total = 0.0
+    for stratum, all_psus in all_strata_psus.items():
+        n_h = len(all_psus)
+        if n_h < 2:
+            continue  # Cannot estimate variance with a single PSU
+
+        # Subpopulation observations in this stratum
+        stratum_df = df_valid[df_valid[strata_var] == stratum]
+
+        # z_hi = weighted total for each PSU (0 if PSU has no subpop observations)
+        z_values = []
+        for psu in all_psus:
+            psu_df = stratum_df[stratum_df[cluster_var] == psu]
+            z_hi = (psu_df[value_var] * psu_df[weight_var]).sum()  # Returns 0 if empty
+            z_values.append(z_hi)
+
+        # z̄_h = mean of PSU totals
+        z_bar_h = sum(z_values) / n_h
+
+        # S_h² = Σ (z_hi - z̄_h)² / (n_h - 1)
+        s_h_squared = sum((z - z_bar_h) ** 2 for z in z_values) / (n_h - 1)
+
+        # U_h = n_h * S_h²
+        v_total += n_h * s_h_squared
+
+    # V(ȳ) = V(Ŷ) / W²
+    overall_var = v_total / (total_weight**2)
+
+    # SE(ȳ) = √V(ȳ)
+    return np.sqrt(overall_var) if overall_var >= 0 else np.nan
+
+
 def weighted_pct_col(df, row_var, col_var, weight_var):
     """Weighted column percentage cross-tabulation."""
     result = {}
@@ -94,6 +190,14 @@ def style_label(cell, bold=False):
     cell.alignment = Alignment(horizontal="left", vertical="center")
 
 
+def write_notes(ws, notes: list):
+    """Tulis catatan kaki di bawah tabel terakhir yang ditulis."""
+    # Cari baris kosong terakhir
+    last_row = ws.max_row + 1
+    for i, note in enumerate(notes):
+        ws.cell(row=last_row + i, column=1, value=note)
+
+
 def thin_border():
     thin = Side(style="thin")
     return Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -111,7 +215,9 @@ def calc_pct_ensure_100(df, n_cols, pct_cols, row_order, total_label="Total"):
             rounding_error = round(100 - pct_sum, 2)
             if rounding_error != 0:
                 max_pct_idx = max(row_order, key=lambda x: df.loc[x, pct_col])
-                df.loc[max_pct_idx, pct_col] = round(df.loc[max_pct_idx, pct_col] + rounding_error, 2)
+                df.loc[max_pct_idx, pct_col] = round(
+                    df.loc[max_pct_idx, pct_col] + rounding_error, 2
+                )
             df.loc[total_label, pct_col] = 100.00
 
 
@@ -244,18 +350,17 @@ print("Processing food commodity data from kp41...")
 df_kp41_food = df_kp41[df_kp41["klp"] != 0].copy()
 
 # Calculate per capita consumption per month: (B41K10 * 30/7) / R301
-df_kp41_food = pd.merge(
-    df_kp41_food,
-    df_kp43[["urut", "mkako"]],
-    on="urut",
-    how="left"
-)
+df_kp41_food = pd.merge(df_kp41_food, df_kp43[["urut", "mkako"]], on="urut", how="left")
 
 # Per capita consumption per month (KP41 already has r301)
 df_kp41_food["kons_art"] = (df_kp41_food["b41k10"] * (30 / 7)) / df_kp41_food["r301"]
 
 # Aggregate by household, klp category, and poverty status (keep weind for weighting)
-food_by_cat = df_kp41_food.groupby(["urut", "klp", "mkako", "weind"])["kons_art"].sum().reset_index()
+food_by_cat = (
+    df_kp41_food.groupby(["urut", "klp", "mkako", "weind"])["kons_art"]
+    .sum()
+    .reset_index()
+)
 food_by_cat.columns = ["urut", "klp", "mkako", "weind", "kons_art_sum"]
 
 # ============================================================
@@ -265,16 +370,24 @@ food_by_cat.columns = ["urut", "klp", "mkako", "weind", "kons_art_sum"]
 print("Processing non-food commodity data from kp42...")
 
 # Filter: klp <> 0 & klp <> 1 & klp <> 2 (as per SPSS script)
-df_kp42_nonfood = df_kp42[(df_kp42["klp"] != 0) & (df_kp42["klp"] != 1) & (df_kp42["klp"] != 2)].copy()
+df_kp42_nonfood = df_kp42[
+    (df_kp42["klp"] != 0) & (df_kp42["klp"] != 1) & (df_kp42["klp"] != 2)
+].copy()
 
 # Calculate per capita monthly consumption: sebulan / r301
 df_kp42_nonfood["kons_art"] = df_kp42_nonfood["sebulan"] / df_kp42_nonfood["r301"]
 
 # Merge mkako from KP43 (KP42 already has weind)
-df_kp42_nonfood = pd.merge(df_kp42_nonfood, df_kp43[["urut", "mkako"]], on="urut", how="left")
+df_kp42_nonfood = pd.merge(
+    df_kp42_nonfood, df_kp43[["urut", "mkako"]], on="urut", how="left"
+)
 
 # Aggregate by household, klp category, and poverty status
-nonfood_by_cat = df_kp42_nonfood.groupby(["urut", "klp", "mkako", "weind"])["kons_art"].sum().reset_index()
+nonfood_by_cat = (
+    df_kp42_nonfood.groupby(["urut", "klp", "mkako", "weind"])["kons_art"]
+    .sum()
+    .reset_index()
+)
 nonfood_by_cat.columns = ["urut", "klp", "mkako", "weind", "kons_art_sum"]
 
 # ============================================================
@@ -478,7 +591,7 @@ df_rt["klkapita"] = pd.cut(
 
 
 # Roof type (moved from r1806a to r1606)
-# Mapping: 1=Beton, 2=Genteng, 3=Seng, 4=Kayu/sirap, 5=Asbes, 
+# Mapping: 1=Beton, 2=Genteng, 3=Seng, 4=Kayu/sirap, 5=Asbes,
 #          6=Bambu/jerami/ijuk/daun-daunan/rumbia, 7=Lainnya
 def recode_atap(x):
     if x in [1, 2]:
@@ -617,7 +730,9 @@ ws = get_ws("T2_Gender")
 sub = df_ind.copy()
 result_rows = []
 for sex_val in sorted(sub["r405"].dropna().unique()):
-    row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Laki-laki" if sex_val == 1 else "Perempuan"}
+    row: dict[str, Union[str, int, float]] = {
+        "Jenis Kelamin": "Laki-laki" if sex_val == 1 else "Perempuan"
+    }
     for mk_val in [0, 1]:
         grp = sub[(sub["r405"] == sex_val) & (sub["mkako"] == mk_val)]
         row[f"N mkako={int(mk_val)}"] = float(round(grp["fwt"].sum(), 0))
@@ -625,7 +740,9 @@ for sex_val in sorted(sub["r405"].dropna().unique()):
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Total"}
 for mk_val in [0, 1]:
-    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
+    total_row[f"N mkako={int(mk_val)}"] = sum(
+        r[f"N mkako={int(mk_val)}"] for r in result_rows
+    )
 result_rows.append(total_row)
 df_t2 = pd.DataFrame(result_rows).set_index("Jenis Kelamin")
 # Calculate percentages using helper function
@@ -655,7 +772,9 @@ for age_grp in age_labels:
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
-    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
+    total_row[f"N mkako={int(mk_val)}"] = sum(
+        r[f"N mkako={int(mk_val)}"] for r in result_rows
+    )
 result_rows.append(total_row)
 df_t3 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
@@ -685,7 +804,9 @@ for age_grp in age_labels:
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
-    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
+    total_row[f"N mkako={int(mk_val)}"] = sum(
+        r[f"N mkako={int(mk_val)}"] for r in result_rows
+    )
 result_rows.append(total_row)
 df_t4 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
@@ -713,7 +834,9 @@ for age_grp in age_labels:
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Kelompok Umur": "Total"}
 for mk_val in [0, 1]:
-    total_row[f"N mkako={int(mk_val)}"] = sum(r[f"N mkako={int(mk_val)}"] for r in result_rows)
+    total_row[f"N mkako={int(mk_val)}"] = sum(
+        r[f"N mkako={int(mk_val)}"] for r in result_rows
+    )
 result_rows.append(total_row)
 df_t5 = pd.DataFrame(result_rows).set_index("Kelompok Umur")
 # Calculate percentages using helper function
@@ -741,7 +864,10 @@ result_rows = []
 for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for age_grp in age_groups:
-        row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        row: dict[str, Union[str, int, float]] = {
+            "Status Perkawinan": marital_label,
+            "Kelompok Umur": age_grp,
+        }
         for mk in [0, 1]:
             mask = (
                 (sub["r404"] == marital_val)
@@ -770,7 +896,10 @@ for marital_val in [1, 2, 3, 4]:
                 )
 
 # Add single Total row showing 100 for each column
-total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+total_row: dict[str, Union[str, int, float]] = {
+    "Status Perkawinan": "Total",
+    "Kelompok Umur": "",
+}
 for mk in [0, 1]:
     total_row[f"% mkako={mk}"] = 100.00
     total_row[f"N mkako={mk}"] = ""
@@ -799,7 +928,10 @@ result_rows = []
 for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for age_grp in age_groups:
-        row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        row: dict[str, Union[str, int, float]] = {
+            "Status Perkawinan": marital_label,
+            "Kelompok Umur": age_grp,
+        }
         for mk in [0, 1]:
             mask = (
                 (sub["r404"] == marital_val)
@@ -826,7 +958,10 @@ for marital_val in [1, 2, 3, 4]:
                 )
 
 # Add single Total row showing 100 for each column
-total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+total_row: dict[str, Union[str, int, float]] = {
+    "Status Perkawinan": "Total",
+    "Kelompok Umur": "",
+}
 for mk in [0, 1]:
     total_row[f"% mkako={mk}"] = 100.00
     total_row[f"N mkako={mk}"] = ""
@@ -851,7 +986,10 @@ result_rows = []
 for marital_val in [1, 2, 3, 4]:
     marital_label = marital_labels[marital_val]
     for age_grp in age_groups:
-        row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_label, "Kelompok Umur": age_grp}
+        row: dict[str, Union[str, int, float]] = {
+            "Status Perkawinan": marital_label,
+            "Kelompok Umur": age_grp,
+        }
         for mk in [0, 1]:
             mask = (
                 (sub["r404"] == marital_val)
@@ -878,7 +1016,10 @@ for marital_val in [1, 2, 3, 4]:
                 )
 
 # Add single Total row showing 100 for each column
-total_row: dict[str, Union[str, int, float]] = {"Status Perkawinan": "Total", "Kelompok Umur": ""}
+total_row: dict[str, Union[str, int, float]] = {
+    "Status Perkawinan": "Total",
+    "Kelompok Umur": "",
+}
 for mk in [0, 1]:
     total_row[f"% mkako={mk}"] = 100.00
     total_row[f"N mkako={mk}"] = ""
@@ -900,7 +1041,9 @@ ws = get_ws("T9_HHHead_Gender")
 sub = df_ind[df_ind["r403"] == 1].copy()
 result_rows = []
 for sex in sorted(sub["r405"].dropna().unique()):
-    row: dict[str, Union[str, int, float]] = {"Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"}
+    row: dict[str, Union[str, int, float]] = {
+        "Jenis Kelamin": "Laki-laki" if sex == 1 else "Perempuan"
+    }
     for mk in [0, 1]:
         mask = (sub["r405"] == sex) & (sub["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -950,7 +1093,9 @@ marital_order = [1, 2, 3, 4]
 
 result_rows = []
 for marital_val in marital_order:
-    row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_labels[marital_val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Perkawinan": marital_labels[marital_val]
+    }
     for mk in [0, 1]:
         mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -997,7 +1142,9 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2)].copy()  # Perempuan
 
 result_rows = []
 for marital_val in marital_order:
-    row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_labels[marital_val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Perkawinan": marital_labels[marital_val]
+    }
     for mk in [0, 1]:
         mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -1039,7 +1186,9 @@ sub = df_ind[df_ind["r403"] == 1].copy()  # All household heads
 
 result_rows = []
 for marital_val in marital_order:
-    row: dict[str, Union[str, int, float]] = {"Status Perkawinan": marital_labels[marital_val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Perkawinan": marital_labels[marital_val]
+    }
     for mk in [0, 1]:
         mask = (sub["r404"] == marital_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -1247,7 +1396,9 @@ r611_order = [1, 2, 3]
 
 result_rows = []
 for r611_val in r611_order:
-    row: dict[str, Union[str, int, float]] = {"Status Pendidikan": r611_labels[r611_val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Pendidikan": r611_labels[r611_val]
+    }
     for mk in [0, 1]:
         mask = (sub["r611"] == r611_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -1281,7 +1432,9 @@ sub = df_ind[
 
 result_rows = []
 for r611_val in r611_order:
-    row: dict[str, Union[str, int, float]] = {"Status Pendidikan": r611_labels[r611_val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Pendidikan": r611_labels[r611_val]
+    }
     for mk in [0, 1]:
         mask = (sub["r611"] == r611_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -1310,7 +1463,9 @@ sub = df_ind[(df_ind["r407"] >= 5) & (df_ind["r407"] <= 24)].copy()
 
 result_rows = []
 for r611_val in r611_order:
-    row: dict[str, Union[str, int, float]] = {"Status Pendidikan": r611_labels[r611_val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Pendidikan": r611_labels[r611_val]
+    }
     for mk in [0, 1]:
         mask = (sub["r611"] == r611_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
@@ -1339,13 +1494,17 @@ sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for educ in educ_order:
-    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {
+        "Pendidikan Tertinggi Yang Ditamatkan": educ
+    }
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Pendidikan Tertinggi Yang Ditamatkan": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1370,13 +1529,17 @@ sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 15)].copy()
 
 result_rows = []
 for educ in educ_order:
-    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {
+        "Pendidikan Tertinggi Yang Ditamatkan": educ
+    }
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Pendidikan Tertinggi Yang Ditamatkan": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1399,13 +1562,17 @@ sub = df_ind[df_ind["r407"] >= 15].copy()
 
 result_rows = []
 for educ in educ_order:
-    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {
+        "Pendidikan Tertinggi Yang Ditamatkan": educ
+    }
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Pendidikan Tertinggi Yang Ditamatkan": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1603,13 +1770,17 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 1)].copy()  # Male HH he
 
 result_rows = []
 for educ in educ_order:
-    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {
+        "Pendidikan Tertinggi Yang Ditamatkan": educ
+    }
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Pendidikan Tertinggi Yang Ditamatkan": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1634,13 +1805,17 @@ sub = df_ind[(df_ind["r403"] == 1) & (df_ind["r405"] == 2)].copy()  # Female HH 
 
 result_rows = []
 for educ in educ_order:
-    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {
+        "Pendidikan Tertinggi Yang Ditamatkan": educ
+    }
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Pendidikan Tertinggi Yang Ditamatkan": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1663,13 +1838,17 @@ sub = df_ind[df_ind["r403"] == 1].copy()  # All HH heads
 
 result_rows = []
 for educ in educ_order:
-    row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": educ}
+    row: dict[str, Union[str, int, float]] = {
+        "Pendidikan Tertinggi Yang Ditamatkan": educ
+    }
     for mk in [0, 1]:
         mask = (sub["kelijasah"] == educ) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Pendidikan Tertinggi Yang Ditamatkan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Pendidikan Tertinggi Yang Ditamatkan": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1818,7 +1997,11 @@ write_table(
 ws = get_ws("T35_Sector_Male")
 sub = df_ind[(df_ind["r405"] == 1) & (df_ind["r407"] >= 15)].copy()
 
-sektor_labels = ["Tidak Bekerja", "Bekerja di Sektor Pertanian", "Bekerja Bukan di Sektor Pertanian"]
+sektor_labels = [
+    "Tidak Bekerja",
+    "Bekerja di Sektor Pertanian",
+    "Bekerja Bukan di Sektor Pertanian",
+]
 
 result_rows = []
 for sektor in sektor_labels:
@@ -1827,9 +2010,17 @@ for sektor in sektor_labels:
         if sektor == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
         elif sektor == "Bekerja di Sektor Pertanian":
-            mask = (sub["sektorkerja"] == "Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["sektorkerja"] == "Pertanian")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         else:
-            mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["sektorkerja"] == "Non Pertanian")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 total_row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": "Total"}
@@ -1859,9 +2050,17 @@ for sektor in sektor_labels:
         if sektor == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
         elif sektor == "Bekerja di Sektor Pertanian":
-            mask = (sub["sektorkerja"] == "Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["sektorkerja"] == "Pertanian")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         else:
-            mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["sektorkerja"] == "Non Pertanian")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 total_row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": "Total"}
@@ -1891,9 +2090,17 @@ for sektor in sektor_labels:
         if sektor == "Tidak Bekerja":
             mask = (sub["tkerja"] == 100) & (sub["mkako"] == mk)
         elif sektor == "Bekerja di Sektor Pertanian":
-            mask = (sub["sektorkerja"] == "Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["sektorkerja"] == "Pertanian")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         else:
-            mask = (sub["sektorkerja"] == "Non Pertanian") & (sub["tkerja"] == 0) & (sub["mkako"] == mk)
+            mask = (
+                (sub["sektorkerja"] == "Non Pertanian")
+                & (sub["tkerja"] == 0)
+                & (sub["mkako"] == mk)
+            )
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
 total_row: dict[str, Union[str, int, float]] = {"Sektor Bekerja": "Total"}
@@ -1920,13 +2127,17 @@ jkn_labels = ["Ya", "Tidak"]
 
 result_rows = []
 for jkn in jkn_labels:
-    row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Mempunyai Jaminan Kesehatan ?": jkn
+    }
     for mk in [0, 1]:
         jkn_val = 1 if jkn == "Ya" else 0
         mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Mempunyai Jaminan Kesehatan ?": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1950,13 +2161,17 @@ sub = df_ind[df_ind["r405"] == 2].copy()
 
 result_rows = []
 for jkn in jkn_labels:
-    row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Mempunyai Jaminan Kesehatan ?": jkn
+    }
     for mk in [0, 1]:
         jkn_val = 1 if jkn == "Ya" else 0
         mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Mempunyai Jaminan Kesehatan ?": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -1978,13 +2193,17 @@ sub = df_ind.copy()
 
 result_rows = []
 for jkn in jkn_labels:
-    row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": jkn}
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Mempunyai Jaminan Kesehatan ?": jkn
+    }
     for mk in [0, 1]:
         jkn_val = 1 if jkn == "Ya" else 0
         mask = (sub["milikjkn"] == jkn_val) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row: dict[str, Union[str, int, float]] = {"Apakah Mempunyai Jaminan Kesehatan ?": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Mempunyai Jaminan Kesehatan ?": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
@@ -2008,16 +2227,22 @@ rokok_labels = ["Ya, setiap hari", "Ya, tidak setiap hari", "Tidak/Tidak Tahu"]
 
 result_rows = []
 for rk in rokok_labels:
-    row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Selama Sebulan Terakhir Merokok Tembakau": rk
+    }
     for mk in [0, 1]:
         mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
-df_t41 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
+df_t41 = pd.DataFrame(result_rows).set_index(
+    "Apakah Selama Sebulan Terakhir Merokok Tembakau"
+)
 n_cols = ["N mkako=0", "N mkako=1"]
 pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t41, n_cols, pct_cols, rokok_labels)
@@ -2037,16 +2262,22 @@ sub = df_ind[(df_ind["r405"] == 2) & (df_ind["r407"] >= 5)].copy()
 
 result_rows = []
 for rk in rokok_labels:
-    row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Selama Sebulan Terakhir Merokok Tembakau": rk
+    }
     for mk in [0, 1]:
         mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
-df_t42 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
+df_t42 = pd.DataFrame(result_rows).set_index(
+    "Apakah Selama Sebulan Terakhir Merokok Tembakau"
+)
 calc_pct_ensure_100(df_t42, n_cols, pct_cols, rokok_labels)
 df_t42 = df_t42[cols_order_mk]
 write_table(
@@ -2064,16 +2295,22 @@ sub = df_ind[df_ind["r407"] >= 5].copy()
 
 result_rows = []
 for rk in rokok_labels:
-    row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": rk}
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Selama Sebulan Terakhir Merokok Tembakau": rk
+    }
     for mk in [0, 1]:
         mask = (sub["rokok"] == rk) & (sub["mkako"] == mk)
         row[f"N mkako={mk}"] = round(sub.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-total_row: dict[str, Union[str, int, float]] = {"Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Selama Sebulan Terakhir Merokok Tembakau": "Total"
+}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
 result_rows.append(total_row)
-df_t43 = pd.DataFrame(result_rows).set_index("Apakah Selama Sebulan Terakhir Merokok Tembakau")
+df_t43 = pd.DataFrame(result_rows).set_index(
+    "Apakah Selama Sebulan Terakhir Merokok Tembakau"
+)
 calc_pct_ensure_100(df_t43, n_cols, pct_cols, rokok_labels)
 df_t43 = df_t43[cols_order_mk]
 write_table(
@@ -2089,21 +2326,27 @@ write_table(
 ws = get_ws("T44_Water_Sanitation")
 result_rows = []
 
-row: dict[str, Union[str, int, float]] = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Layak"}
+row: dict[str, Union[str, int, float]] = {
+    "Penggunaan Air Minum dan Sanitasi": "Air Minum Layak"
+}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
     row[f"% mkako={mk}"] = round(weighted_mean(grp["airmlayak"], w), 2)
 result_rows.append(row)
 
-row: dict[str, Union[str, int, float]] = {"Penggunaan Air Minum dan Sanitasi": "Air Minum Bersih"}
+row: dict[str, Union[str, int, float]] = {
+    "Penggunaan Air Minum dan Sanitasi": "Air Minum Bersih"
+}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
     row[f"% mkako={mk}"] = round(weighted_mean(grp["sab"], w), 2)
 result_rows.append(row)
 
-row: dict[str, Union[str, int, float]] = {"Penggunaan Air Minum dan Sanitasi": "Sanitasi Layak"}
+row: dict[str, Union[str, int, float]] = {
+    "Penggunaan Air Minum dan Sanitasi": "Sanitasi Layak"
+}
 for mk in [0, 1]:
     grp = df_rt[df_rt["mkako"] == mk]
     w = grp["fwt"]
@@ -2114,7 +2357,9 @@ df_t44 = pd.DataFrame(result_rows).set_index("Penggunaan Air Minum dan Sanitasi"
 cols_order_mk_pct = ["% mkako=1", "% mkako=0"]
 df_t44 = df_t44[cols_order_mk_pct]
 write_table(
-    ws, "Tabel 44. Persentase Rumah Tangga yang Menggunakan Air Minum Layak, Air Minum Bersih, Sanitasi Layak, dan Status Miskin", df_t44
+    ws,
+    "Tabel 44. Persentase Rumah Tangga yang Menggunakan Air Minum Layak, Air Minum Bersih, Sanitasi Layak, dan Status Miskin",
+    df_t44,
 )
 
 # ============================================================
@@ -2123,12 +2368,19 @@ write_table(
 
 ws = get_ws("T45_HouseOwnership")
 
-kepemilikan_labels = {1: "Milik Sendiri", 2: "Kontrak/Sewa", 3: "Bebas Sewa", 4: "Dinas"}
+kepemilikan_labels = {
+    1: "Milik Sendiri",
+    2: "Kontrak/Sewa",
+    3: "Bebas Sewa",
+    4: "Dinas",
+}
 kepemilikan_order = [1, 2, 3, 4]
 
 result_rows = []
 for val in kepemilikan_order:
-    row: dict[str, Union[str, int, float]] = {"Status Kepemilikan Rumah": kepemilikan_labels[val]}
+    row: dict[str, Union[str, int, float]] = {
+        "Status Kepemilikan Rumah": kepemilikan_labels[val]
+    }
     for mk in [0, 1]:
         mask = (df_rt["r1602"] == val) & (df_rt["mkako"] == mk)
         row[f"N mkako={mk}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
@@ -2142,9 +2394,15 @@ result_rows.append(total_row)
 df_t45 = pd.DataFrame(result_rows).set_index("Status Kepemilikan Rumah")
 n_cols = ["N mkako=0", "N mkako=1"]
 pct_cols = ["% mkako=0", "% mkako=1"]
-calc_pct_ensure_100(df_t45, n_cols, pct_cols, [kepemilikan_labels[v] for v in kepemilikan_order])
+calc_pct_ensure_100(
+    df_t45, n_cols, pct_cols, [kepemilikan_labels[v] for v in kepemilikan_order]
+)
 df_t45 = df_t45[cols_order_mk]
-write_table(ws, "Tabel 45. Persentase Rumah Tangga Menurut Status Kepemilikan Rumah dan Status Miskin", df_t45)
+write_table(
+    ws,
+    "Tabel 45. Persentase Rumah Tangga Menurut Status Kepemilikan Rumah dan Status Miskin",
+    df_t45,
+)
 
 # ============================================================
 # TABLE 46: Floor Area per Capita by Poverty
@@ -2172,14 +2430,23 @@ n_cols = ["N mkako=0", "N mkako=1"]
 pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t46, n_cols, pct_cols, luas_labels)
 df_t46 = df_t46[cols_order_mk]
-write_table(ws, "Tabel 46. Persentase Rumah Tangga Menurut Luas Lantai Rumah per Kapita dan Status Miskin", df_t46)
+write_table(
+    ws,
+    "Tabel 46. Persentase Rumah Tangga Menurut Luas Lantai Rumah per Kapita dan Status Miskin",
+    df_t46,
+)
 
 # ============================================================
 # TABLE 47: Roof Type by Poverty
 # ============================================================
 
 ws = get_ws("T47_RoofType")
-roof_cats = ["Beton/Genteng", "Seng", "Asbes", "Bambu/kayu/sirap/jerami/ijuk/daun-daunan/rumbia/lainnya"]
+roof_cats = [
+    "Beton/Genteng",
+    "Seng",
+    "Asbes",
+    "Bambu/kayu/sirap/jerami/ijuk/daun-daunan/rumbia/lainnya",
+]
 result_rows = []
 for rk in roof_cats:
     row: dict[str, Union[str, int, float]] = {"Jenis Atap": rk}
@@ -2196,14 +2463,21 @@ n_cols = ["N mkako=0", "N mkako=1"]
 pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t47, n_cols, pct_cols, roof_cats)
 df_t47 = df_t47[cols_order_mk]
-write_table(ws, "Tabel 47. Persentase Rumah Tangga Menurut Jenis Atap dan Status Miskin", df_t47)
+write_table(
+    ws, "Tabel 47. Persentase Rumah Tangga Menurut Jenis Atap dan Status Miskin", df_t47
+)
 
 # ============================================================
 # TABLE 48: Wall Type by Poverty
 # ============================================================
 
 ws = get_ws("T48_WallType")
-wall_cats = ["Tembok", "Plesteran Anyaman Bambu/Kawat", "Kayu/Papan", "Lainnya (Anyaman Bambu/batang kayu/bamboo/lainnya)"]
+wall_cats = [
+    "Tembok",
+    "Plesteran Anyaman Bambu/Kawat",
+    "Kayu/Papan",
+    "Lainnya (Anyaman Bambu/batang kayu/bamboo/lainnya)",
+]
 result_rows = []
 for wk in wall_cats:
     row: dict[str, Union[str, int, float]] = {"Jenis Dinding": wk}
@@ -2220,7 +2494,11 @@ n_cols = ["N mkako=0", "N mkako=1"]
 pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t48, n_cols, pct_cols, wall_cats)
 df_t48 = df_t48[cols_order_mk]
-write_table(ws, "Tabel 48. Persentase Rumah Tangga Menurut Jenis Dinding dan Status Miskin", df_t48)
+write_table(
+    ws,
+    "Tabel 48. Persentase Rumah Tangga Menurut Jenis Dinding dan Status Miskin",
+    df_t48,
+)
 
 # ============================================================
 # TABLE 49: Floor Type by Poverty
@@ -2251,7 +2529,9 @@ pct_cols = ["% mkako=0", "% mkako=1"]
 calc_pct_ensure_100(df_t49, n_cols, pct_cols, floor_cats)
 df_t49 = df_t49[cols_order_mk]
 write_table(
-    ws, "Tabel 49. Persentase Rumah Tangga Menurut Jenis Lantai dan Status Miskin", df_t49
+    ws,
+    "Tabel 49. Persentase Rumah Tangga Menurut Jenis Lantai dan Status Miskin",
+    df_t49,
 )
 
 # ============================================================
@@ -2294,7 +2574,11 @@ for mk in [0, 1]:
 # Reorder columns: Miskin (mkako=1) first, then Tidak Miskin (mkako=0)
 cols_order = ["N mkako=1", "N mkako=0", "% mkako=1", "% mkako=0"]
 df_t50 = df_t50[cols_order]
-write_table(ws, "Tabel 50. Persentase Rumah Tangga Menurut Sumber Penerangan dan Status Kemiskinan", df_t50)
+write_table(
+    ws,
+    "Tabel 50. Persentase Rumah Tangga Menurut Sumber Penerangan dan Status Kemiskinan",
+    df_t50,
+)
 
 # ============================================================
 # TABLE 51: Food/Non-food Share - Laki-laki
@@ -2312,21 +2596,31 @@ for exp_cat in ["Makanan", "Non-Makanan"]:
     if exp_cat == "Makanan":
         row["Miskin"] = round(weighted_mean(grp_miskin["sharefoodkapita"], w_miskin), 2)
     else:
-        row["Miskin"] = round(weighted_mean(grp_miskin["sharenonfoodkapita"], w_miskin), 2)
+        row["Miskin"] = round(
+            weighted_mean(grp_miskin["sharenonfoodkapita"], w_miskin), 2
+        )
     # Tidak Miskin
     mask_tidak = sub["mkako"] == 0
     grp_tidak = sub[mask_tidak]
     w_tidak = grp_tidak["fwt"]
     if exp_cat == "Makanan":
-        row["Tidak Miskin"] = round(weighted_mean(grp_tidak["sharefoodkapita"], w_tidak), 2)
+        row["Tidak Miskin"] = round(
+            weighted_mean(grp_tidak["sharefoodkapita"], w_tidak), 2
+        )
     else:
-        row["Tidak Miskin"] = round(weighted_mean(grp_tidak["sharenonfoodkapita"], w_tidak), 2)
+        row["Tidak Miskin"] = round(
+            weighted_mean(grp_tidak["sharenonfoodkapita"], w_tidak), 2
+        )
     # Miskin + Tidak Miskin (Total combined)
     w_total = sub["fwt"]
     if exp_cat == "Makanan":
-        row["Miskin+Tidak Miskin"] = round(weighted_mean(sub["sharefoodkapita"], w_total), 2)
+        row["Miskin+Tidak Miskin"] = round(
+            weighted_mean(sub["sharefoodkapita"], w_total), 2
+        )
     else:
-        row["Miskin+Tidak Miskin"] = round(weighted_mean(sub["sharenonfoodkapita"], w_total), 2)
+        row["Miskin+Tidak Miskin"] = round(
+            weighted_mean(sub["sharenonfoodkapita"], w_total), 2
+        )
     result_rows.append(row)
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Kelompok Pengeluaran": "Total"}
@@ -2357,21 +2651,31 @@ for exp_cat in ["Makanan", "Non-Makanan"]:
     if exp_cat == "Makanan":
         row["Miskin"] = round(weighted_mean(grp_miskin["sharefoodkapita"], w_miskin), 2)
     else:
-        row["Miskin"] = round(weighted_mean(grp_miskin["sharenonfoodkapita"], w_miskin), 2)
+        row["Miskin"] = round(
+            weighted_mean(grp_miskin["sharenonfoodkapita"], w_miskin), 2
+        )
     # Tidak Miskin
     mask_tidak = sub["mkako"] == 0
     grp_tidak = sub[mask_tidak]
     w_tidak = grp_tidak["fwt"]
     if exp_cat == "Makanan":
-        row["Tidak Miskin"] = round(weighted_mean(grp_tidak["sharefoodkapita"], w_tidak), 2)
+        row["Tidak Miskin"] = round(
+            weighted_mean(grp_tidak["sharefoodkapita"], w_tidak), 2
+        )
     else:
-        row["Tidak Miskin"] = round(weighted_mean(grp_tidak["sharenonfoodkapita"], w_tidak), 2)
+        row["Tidak Miskin"] = round(
+            weighted_mean(grp_tidak["sharenonfoodkapita"], w_tidak), 2
+        )
     # Miskin + Tidak Miskin (Total combined)
     w_total = sub["fwt"]
     if exp_cat == "Makanan":
-        row["Miskin+Tidak Miskin"] = round(weighted_mean(sub["sharefoodkapita"], w_total), 2)
+        row["Miskin+Tidak Miskin"] = round(
+            weighted_mean(sub["sharefoodkapita"], w_total), 2
+        )
     else:
-        row["Miskin+Tidak Miskin"] = round(weighted_mean(sub["sharenonfoodkapita"], w_total), 2)
+        row["Miskin+Tidak Miskin"] = round(
+            weighted_mean(sub["sharenonfoodkapita"], w_total), 2
+        )
     result_rows.append(row)
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Kelompok Pengeluaran": "Total"}
@@ -2402,21 +2706,31 @@ for exp_cat in ["Makanan", "Non-Makanan"]:
     if exp_cat == "Makanan":
         row["Miskin"] = round(weighted_mean(grp_miskin["sharefoodkapita"], w_miskin), 2)
     else:
-        row["Miskin"] = round(weighted_mean(grp_miskin["sharenonfoodkapita"], w_miskin), 2)
+        row["Miskin"] = round(
+            weighted_mean(grp_miskin["sharenonfoodkapita"], w_miskin), 2
+        )
     # Tidak Miskin
     mask_tidak = sub["mkako"] == 0
     grp_tidak = sub[mask_tidak]
     w_tidak = grp_tidak["fwt"]
     if exp_cat == "Makanan":
-        row["Tidak Miskin"] = round(weighted_mean(grp_tidak["sharefoodkapita"], w_tidak), 2)
+        row["Tidak Miskin"] = round(
+            weighted_mean(grp_tidak["sharefoodkapita"], w_tidak), 2
+        )
     else:
-        row["Tidak Miskin"] = round(weighted_mean(grp_tidak["sharenonfoodkapita"], w_tidak), 2)
+        row["Tidak Miskin"] = round(
+            weighted_mean(grp_tidak["sharenonfoodkapita"], w_tidak), 2
+        )
     # Miskin + Tidak Miskin (Total combined)
     w_total = sub["fwt"]
     if exp_cat == "Makanan":
-        row["Miskin+Tidak Miskin"] = round(weighted_mean(sub["sharefoodkapita"], w_total), 2)
+        row["Miskin+Tidak Miskin"] = round(
+            weighted_mean(sub["sharefoodkapita"], w_total), 2
+        )
     else:
-        row["Miskin+Tidak Miskin"] = round(weighted_mean(sub["sharenonfoodkapita"], w_total), 2)
+        row["Miskin+Tidak Miskin"] = round(
+            weighted_mean(sub["sharenonfoodkapita"], w_total), 2
+        )
     result_rows.append(row)
 # Add Total row
 total_row: dict[str, Union[str, int, float]] = {"Kelompok Pengeluaran": "Total"}
@@ -2483,28 +2797,41 @@ for cat in food_cats:
     row: dict[str, Union[str, int, float]] = {"Kelompok Komoditas Makanan": cat}
 
     # Miskin (mkako=1)
-    grp_miskin = food_by_cat[(food_by_cat["klp"] == klp_val) & (food_by_cat["mkako"] == 1)]
+    grp_miskin = food_by_cat[
+        (food_by_cat["klp"] == klp_val) & (food_by_cat["mkako"] == 1)
+    ]
     if len(grp_miskin) > 0:
         kons_miskin = (grp_miskin["kons_art_sum"] * grp_miskin["weind"]).sum()
-        total_food_miskin = (food_by_cat[food_by_cat["mkako"] == 1]["kons_art_sum"] *
-                            food_by_cat[food_by_cat["mkako"] == 1]["weind"]).sum()
-        pct_raw_miskin = kons_miskin / total_food_miskin * 100 if total_food_miskin > 0 else 0.0
+        total_food_miskin = (
+            food_by_cat[food_by_cat["mkako"] == 1]["kons_art_sum"]
+            * food_by_cat[food_by_cat["mkako"] == 1]["weind"]
+        ).sum()
+        pct_raw_miskin = (
+            kons_miskin / total_food_miskin * 100 if total_food_miskin > 0 else 0.0
+        )
     else:
         pct_raw_miskin = 0.0
     pct_miskin_raw.append(pct_raw_miskin)
 
     # Tidak Miskin (mkako=0)
-    grp_tidak = food_by_cat[(food_by_cat["klp"] == klp_val) & (food_by_cat["mkako"] == 0)]
+    grp_tidak = food_by_cat[
+        (food_by_cat["klp"] == klp_val) & (food_by_cat["mkako"] == 0)
+    ]
     if len(grp_tidak) > 0:
         kons_tidak = (grp_tidak["kons_art_sum"] * grp_tidak["weind"]).sum()
-        total_food_tidak = (food_by_cat[food_by_cat["mkako"] == 0]["kons_art_sum"] *
-                           food_by_cat[food_by_cat["mkako"] == 0]["weind"]).sum()
-        pct_raw_tidak = kons_tidak / total_food_tidak * 100 if total_food_tidak > 0 else 0.0
+        total_food_tidak = (
+            food_by_cat[food_by_cat["mkako"] == 0]["kons_art_sum"]
+            * food_by_cat[food_by_cat["mkako"] == 0]["weind"]
+        ).sum()
+        pct_raw_tidak = (
+            kons_tidak / total_food_tidak * 100 if total_food_tidak > 0 else 0.0
+        )
     else:
         pct_raw_tidak = 0.0
     pct_tidak_raw.append(pct_raw_tidak)
 
     result_rows.append(row)
+
 
 # Adjust percentages to ensure sum = 100
 # Calculate rounded values and adjust the category with largest decimal portion
@@ -2525,8 +2852,11 @@ def adjust_percentages(pct_raw):
         else:
             # Need to decrease: find index with smallest decimal (closest to rounding down)
             adjust_idx = min(range(len(decimals)), key=lambda i: decimals[i])
-            rounded[adjust_idx] = round(rounded[adjust_idx] + diff, 2)  # diff is negative
+            rounded[adjust_idx] = round(
+                rounded[adjust_idx] + diff, 2
+            )  # diff is negative
     return rounded
+
 
 pct_miskin_adj = adjust_percentages(pct_miskin_raw)
 pct_tidak_adj = adjust_percentages(pct_tidak_raw)
@@ -2585,23 +2915,37 @@ for cat in nonfood_cats:
     row: dict[str, Union[str, int, float]] = {"Kelompok Komoditas Non-Makanan": cat}
 
     # Miskin (mkako=1)
-    grp_miskin = nonfood_by_cat[(nonfood_by_cat["klp"] == klp_val) & (nonfood_by_cat["mkako"] == 1)]
+    grp_miskin = nonfood_by_cat[
+        (nonfood_by_cat["klp"] == klp_val) & (nonfood_by_cat["mkako"] == 1)
+    ]
     if len(grp_miskin) > 0:
         kons_miskin = (grp_miskin["kons_art_sum"] * grp_miskin["weind"]).sum()
-        total_nonfood_miskin = (nonfood_by_cat[nonfood_by_cat["mkako"] == 1]["kons_art_sum"] *
-                            nonfood_by_cat[nonfood_by_cat["mkako"] == 1]["weind"]).sum()
-        pct_raw_miskin = kons_miskin / total_nonfood_miskin * 100 if total_nonfood_miskin > 0 else 0.0
+        total_nonfood_miskin = (
+            nonfood_by_cat[nonfood_by_cat["mkako"] == 1]["kons_art_sum"]
+            * nonfood_by_cat[nonfood_by_cat["mkako"] == 1]["weind"]
+        ).sum()
+        pct_raw_miskin = (
+            kons_miskin / total_nonfood_miskin * 100
+            if total_nonfood_miskin > 0
+            else 0.0
+        )
     else:
         pct_raw_miskin = 0.0
     pct_miskin_raw.append(pct_raw_miskin)
 
     # Tidak Miskin (mkako=0)
-    grp_tidak = nonfood_by_cat[(nonfood_by_cat["klp"] == klp_val) & (nonfood_by_cat["mkako"] == 0)]
+    grp_tidak = nonfood_by_cat[
+        (nonfood_by_cat["klp"] == klp_val) & (nonfood_by_cat["mkako"] == 0)
+    ]
     if len(grp_tidak) > 0:
         kons_tidak = (grp_tidak["kons_art_sum"] * grp_tidak["weind"]).sum()
-        total_nonfood_tidak = (nonfood_by_cat[nonfood_by_cat["mkako"] == 0]["kons_art_sum"] *
-                           nonfood_by_cat[nonfood_by_cat["mkako"] == 0]["weind"]).sum()
-        pct_raw_tidak = kons_tidak / total_nonfood_tidak * 100 if total_nonfood_tidak > 0 else 0.0
+        total_nonfood_tidak = (
+            nonfood_by_cat[nonfood_by_cat["mkako"] == 0]["kons_art_sum"]
+            * nonfood_by_cat[nonfood_by_cat["mkako"] == 0]["weind"]
+        ).sum()
+        pct_raw_tidak = (
+            kons_tidak / total_nonfood_tidak * 100 if total_nonfood_tidak > 0 else 0.0
+        )
     else:
         pct_raw_tidak = 0.0
     pct_tidak_raw.append(pct_raw_tidak)
@@ -2618,7 +2962,9 @@ for i, row in enumerate(result_rows):
     row["Tidak Miskin (%)"] = pct_tidak_adj[i]
 
 # Add Total row
-total_row: dict[str, Union[str, int, float]] = {"Kelompok Komoditas Non-Makanan": "Total"}
+total_row: dict[str, Union[str, int, float]] = {
+    "Kelompok Komoditas Non-Makanan": "Total"
+}
 total_row["Miskin (%)"] = 100.00
 total_row["Tidak Miskin (%)"] = 100.00
 result_rows.append(total_row)
@@ -2650,7 +2996,9 @@ for r2002_val in sorted(poor_households["r2002"].dropna().unique()):
     pct_raw = n_weighted / total_weight * 100 if total_weight > 0 else 0.0
     raw_pcts.append(pct_raw)
     # Map r2002 values to labels (1=Ya, 5=Tidak based on Susenas coding)
-    label = "Ya" if r2002_val == 1 else "Tidak" if r2002_val == 5 else str(int(r2002_val))
+    label = (
+        "Ya" if r2002_val == 1 else "Tidak" if r2002_val == 5 else str(int(r2002_val))
+    )
     labels.append(label)
 
 # Adjust percentages to ensure sum = 100
@@ -2671,7 +3019,9 @@ total_row: dict[str, Union[str, int, float]] = {
 }
 result_rows.append(total_row)
 
-df_t56 = pd.DataFrame(result_rows).set_index("Apakah Pernah Menjadi Penerima PKH dalam Setahun Terakhir ?")
+df_t56 = pd.DataFrame(result_rows).set_index(
+    "Apakah Pernah Menjadi Penerima PKH dalam Setahun Terakhir ?"
+)
 write_table(
     ws,
     "Tabel 56. Persentase Rumah Tangga Miskin yang Pernah Menjadi Penerima PKH dalam Setahun Terakhir",
@@ -2698,7 +3048,9 @@ for r2005_val in sorted(poor_households["r2005"].dropna().unique()):
     pct_raw = n_weighted / total_weight * 100 if total_weight > 0 else 0.0
     raw_pcts.append(pct_raw)
     # Map r2005 values to labels (1=Ya, 5=Tidak based on Susenas coding)
-    label = "Ya" if r2005_val == 1 else "Tidak" if r2005_val == 5 else str(int(r2005_val))
+    label = (
+        "Ya" if r2005_val == 1 else "Tidak" if r2005_val == 5 else str(int(r2005_val))
+    )
     labels.append(label)
 
 # Adjust percentages to ensure sum = 100
@@ -2719,7 +3071,9 @@ total_row: dict[str, Union[str, int, float]] = {
 }
 result_rows.append(total_row)
 
-df_t57 = pd.DataFrame(result_rows).set_index("Apakah Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako) ?")
+df_t57 = pd.DataFrame(result_rows).set_index(
+    "Apakah Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako) ?"
+)
 write_table(
     ws,
     "Tabel 57. Persentase Rumah Tangga Miskin yang Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako)",
@@ -2727,70 +3081,286 @@ write_table(
 )
 
 # ============================================================
-# TABLE 58-59: APS with Standard Error (Complex Sample Approximation)
+# TABLE 58: Relative Standard Error APS Penduduk Miskin
 # ============================================================
-
-ws = get_ws("T58_59_APS_SE")
-sub = df_ind[(df_ind["r407"] >= 7) & (df_ind["r407"] <= 18)].copy()
+ws = get_ws("T58_APS_Miskin")
 result_rows = []
-for mk in [0, 1]:
-    for age_grp in ["7-12", "13-15", "16-18"]:
-        mask = (sub["mkako"] == mk) & (sub["kelum4"].astype(str) == age_grp)
-        grp = sub[mask]
-        if len(grp) == 0:
-            continue
-        mn = weighted_mean(grp["aps"], grp["fwt"])
-        n = grp["fwt"].sum()
-        se = np.sqrt(mn * (100 - mn) / n) if n > 0 and pd.notna(mn) else np.nan
-        result_rows.append(
-            {
-                "Status Kemiskinan": "Miskin" if mk == 1 else "Tidak Miskin",
-                "Kelompok Umur": age_grp,
-                "APS (%)": round(mn, 2),
-                "SE": round(se, 4),
-                "CV": round(se / mn * 100, 2) if mn and mn > 0 else np.nan,
-            }
-        )
-df_t5859 = pd.DataFrame(result_rows).set_index(["Status Kemiskinan", "Kelompok Umur"])
+
+for age_grp in ["7-12", "13-15", "16-18"]:
+    subpop_mask = (
+        (df_ind["r407"] >= 7)
+        & (df_ind["r407"] <= 18)
+        & (df_ind["mkako"] == 1)
+        & (df_ind["kelum4"].astype(str).str.strip() == age_grp)
+    )
+
+    grp = df_ind[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp["aps"], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_ind,
+        value_var="aps",
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    # RSE flagging
+    if pd.notna(rse):
+        if rse > 50:
+            rse_str = f"{round(rse, 1)}**"
+        elif rse > 25:
+            rse_str = f"{round(rse, 1)}*"
+        else:
+            rse_str = f"{round(rse, 1)}"
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "APS": age_grp,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t58 = pd.DataFrame(result_rows).set_index("APS")
+
+# Tulis tabel
 write_table(
     ws,
-    "Tabel 58-59. APS (7-18 th) dengan Standard Error Menurut Status Kemiskinan",
-    df_t5859,
+    "Tabel 58. Relative Standard Error Angka Partisipasi Sekolah (APS) Penduduk Miskin",
+    df_t58,
+)
+
+# Tulis catatan kaki
+notes = [
+    "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+    "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+]
+write_notes(ws, notes)
+
+# ============================================================
+# TABLE 59: Relative Standard Error APS Penduduk Tidak Miskin
+# ============================================================
+ws = get_ws("T59_APS_TidakMiskin")
+result_rows = []
+
+for age_grp in ["7-12", "13-15", "16-18"]:
+    subpop_mask = (
+        (df_ind["r407"] >= 7)
+        & (df_ind["r407"] <= 18)
+        & (df_ind["mkako"] == 0)
+        & (df_ind["kelum4"].astype(str).str.strip() == age_grp)
+    )
+
+    grp = df_ind[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp["aps"], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_ind,
+        value_var="aps",
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
+        )
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "APS": age_grp,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t59 = pd.DataFrame(result_rows).set_index("APS")
+write_table(
+    ws,
+    "Tabel 59. Relative Standard Error Angka Partisipasi Sekolah (APS) Penduduk Tidak Miskin",
+    df_t59,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
 )
 
 # ============================================================
-# TABLE 60-61: Employment with SE
+# TABLE 60: Relative Standard Error Persentase Penduduk Miskin
+#           Berusia 15 Tahun Ke Atas Menurut Sektor Bekerja
 # ============================================================
+ws = get_ws("T60_Sektor_Miskin")
+sub_60 = df_ind[(df_ind["r407"] >= 15) & (df_ind["r102"] == REGION_CODE)].copy()
 
-ws = get_ws("T60_61_Employment_SE")
-sub = df_ind[df_ind["r407"] >= 15].copy()
 result_rows = []
-for mk in [0, 1]:
-    mask = sub["mkako"] == mk
-    grp = sub[mask]
-    w = grp["fwt"]
-    n = w.sum()
-    for var, label in [
-        ("tkerja", "Tidak Bekerja"),
-        ("ktani", "Pertanian"),
-        ("kntani", "Non-Pertanian"),
-    ]:
-        mn = weighted_mean(grp[var], w)
-        se = np.sqrt(mn * (100 - mn) / n) if n > 0 and pd.notna(mn) else np.nan
-        result_rows.append(
-            {
-                "Status Kemiskinan": "Miskin" if mk == 1 else "Tidak Miskin",
-                "Indikator Kerja": label,
-                "Rata-rata (%)": round(mn, 2),
-                "SE": round(se, 4),
-                "CV": round(se / mn * 100, 2) if mn and mn > 0 else np.nan,
-            }
+for var, label in [
+    ("tkerja", "Tidak Bekerja"),
+    ("ktani", "Bekerja Di Sektor Pertanian"),
+    ("kntani", "Bekerja Bukan Di Sektor Pertanian"),
+]:
+    subpop_mask = (
+        (df_ind["r407"] >= 15)
+        & (df_ind["r102"] == REGION_CODE)
+        & (df_ind["mkako"] == 1)
+    )
+
+    grp = df_ind[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp[var], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_ind,
+        value_var=var,
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
         )
-df_t6061 = pd.DataFrame(result_rows).set_index(["Status Kemiskinan", "Indikator Kerja"])
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "Sektor Bekerja": label,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t60 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
 write_table(
     ws,
-    "Tabel 60-61. Status Kerja (Sektor) dengan SE Menurut Status Kemiskinan (15+)",
-    df_t6061,
+    "Tabel 60. Relative Standard Error Persentase Penduduk Miskin Berusia 15 Tahun Ke Atas Menurut Sektor Bekerja",
+    df_t60,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
+)
+
+# ============================================================
+# TABLE 61: Relative Standard Error Persentase Penduduk Tidak Miskin
+#           Berusia 15 Tahun Ke Atas Menurut Sektor Bekerja
+# ============================================================
+ws = get_ws("T61_Sektor_TidakMiskin")
+result_rows = []
+
+for var, label in [
+    ("tkerja", "Tidak Bekerja"),
+    ("ktani", "Bekerja Di Sektor Pertanian"),
+    ("kntani", "Bekerja Bukan Di Sektor Pertanian"),
+]:
+    subpop_mask = (
+        (df_ind["r407"] >= 15)
+        & (df_ind["r102"] == REGION_CODE)
+        & (df_ind["mkako"] == 0)
+    )
+
+    grp = df_ind[subpop_mask].copy()
+    if len(grp) == 0:
+        continue
+
+    mn = weighted_mean(grp[var], grp["fwt"])
+    se = complex_sample_se_mean(
+        df_full=df_ind,
+        value_var=var,
+        weight_var="fwt",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    if pd.notna(rse):
+        rse_str = (
+            f"{round(rse, 1)}**"
+            if rse > 50
+            else f"{round(rse, 1)}*"
+            if rse > 25
+            else f"{round(rse, 1)}"
+        )
+    else:
+        rse_str = "-"
+
+    result_rows.append(
+        {
+            "Sektor Bekerja": label,
+            "Estimasi": round(mn, 2),
+            "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+            "Batas Bawah": round(lower_bound, 2) if pd.notna(lower_bound) else np.nan,
+            "Batas Atas": round(upper_bound, 2) if pd.notna(upper_bound) else np.nan,
+            "RSE": rse_str,
+        }
+    )
+
+df_t61 = pd.DataFrame(result_rows).set_index("Sektor Bekerja")
+write_table(
+    ws,
+    "Tabel 61. Relative Standard Error Persentase Penduduk Tidak Miskin Berusia 15 Tahun Ke Atas Menurut Sektor Bekerja",
+    df_t61,
+)
+write_notes(
+    ws,
+    [
+        "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+        "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+    ],
 )
 
 # ============================================================
