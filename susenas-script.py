@@ -198,6 +198,31 @@ def write_notes(ws, notes: list):
         ws.cell(row=last_row + i, column=1, value=note)
 
 
+# Helper: RSE flag
+def rse_flag(rse):
+    if pd.isna(rse):
+        return "-"
+    elif rse > 50:
+        return f"{round(rse, 1)}**"
+    elif rse > 25:
+        return f"{round(rse, 1)}*"
+    else:
+        return f"{round(rse, 1)}"
+
+
+# Helper: build vertical layout (Statistik | Nilai)
+def build_vertical_table(stats_dict):
+    return pd.DataFrame(
+        list(stats_dict.items()), columns=["Statistik", "Nilai"]
+    ).set_index("Statistik")
+
+
+NOTES = [
+    "Catatan: *RSE >25% tetapi ≤50%, estimasi harus digunakan dengan hati-hati",
+    "         **RSE >50%, estimasi tidak reliabel dan harus digunakan dengan sangat hati-hati",
+]
+
+
 def thin_border():
     thin = Side(style="thin")
     return Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -3644,53 +3669,185 @@ write_notes(
 )
 
 # ============================================================
-# TABLE 66-69: RSE for P0, P1, P2 and Poor Count
+# TABLE 66: Relative Standard Error Jumlah Penduduk Miskin
 # ============================================================
-
-ws = get_ws("T66_69_RSE_Poverty")
+ws = get_ws("T66_RSE_JumlahMiskin")
 result_rows = []
+
 for r102_val, grp in df_kp43.groupby("r102"):
-    w = grp["weind"]
-    n = w.sum()
+    subpop_mask = df_kp43["r102"] == r102_val
 
-    # P0
-    mn_p0 = weighted_mean(grp["dmkako"], w)
-    se_p0 = np.sqrt(mn_p0 * (100 - mn_p0) / n) if n > 0 and pd.notna(mn_p0) else np.nan
+    # Jumlah penduduk miskin = weighted sum of mkako==1
+    jml_miskin = grp.loc[grp["mkako"] == 1, "weind"].sum()
 
-    # P1
-    mn_p1 = weighted_mean(grp["p1kako"], w)
-    se_p1 = grp["p1kako"].std() / np.sqrt(len(grp)) if len(grp) > 1 else np.nan
-
-    # P2
-    mn_p2 = weighted_mean(grp["p2kako"], w)
-    se_p2 = grp["p2kako"].std() / np.sqrt(len(grp)) if len(grp) > 1 else np.nan
-
-    # Poor count
-    jml = grp.loc[grp["mkako"] == 1, "weind"].sum()
-
-    result_rows.append(
-        {
-            "Wilayah (r102)": int(r102_val),
-            "P0 (%)": round(mn_p0, 2),
-            "SE P0": round(se_p0, 4),
-            "RSE P0 (%)": round(se_p0 / mn_p0 * 100, 2)
-            if mn_p0 and mn_p0 > 0
-            else np.nan,
-            "P1": round(mn_p1, 3),
-            "SE P1": round(se_p1, 4),
-            "RSE P1 (%)": round(se_p1 / mn_p1 * 100, 2)
-            if mn_p1 and mn_p1 > 0
-            else np.nan,
-            "P2": round(mn_p2, 3),
-            "SE P2": round(se_p2, 4),
-            "RSE P2 (%)": round(se_p2 / mn_p2 * 100, 2)
-            if mn_p2 and mn_p2 > 0
-            else np.nan,
-            "Jumlah Miskin": round(jml, 0),
-        }
+    # SE for count: use complex sample SE on dmkako then multiply by total weight
+    se_prop = complex_sample_se_mean(
+        df_full=df_kp43,
+        value_var="dmkako",
+        weight_var="weind",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
     )
-df_t6669 = pd.DataFrame(result_rows).set_index("Wilayah (r102)")
-write_table(ws, "Tabel 66-69. RSE P0, P1, P2, dan Jumlah Penduduk Miskin", df_t6669)
+    total_weight = grp["weind"].sum()
+    se_count = se_prop * total_weight / 100 if pd.notna(se_prop) else np.nan
+
+    lower_bound = jml_miskin - 1.96 * se_count if pd.notna(se_count) else np.nan
+    upper_bound = jml_miskin + 1.96 * se_count if pd.notna(se_count) else np.nan
+    rse = (
+        (se_count / jml_miskin * 100)
+        if (jml_miskin > 0 and pd.notna(se_count))
+        else np.nan
+    )
+
+    stats = {
+        "Estimasi": round(jml_miskin, 0),
+        "Standard Error": round(se_count, 4) if pd.notna(se_count) else np.nan,
+        "Batas Bawah Selang Kepercayaan 95%": round(lower_bound, 2)
+        if pd.notna(lower_bound)
+        else np.nan,
+        "Batas Atas Selang Kepercayaan 95%": round(upper_bound, 2)
+        if pd.notna(upper_bound)
+        else np.nan,
+        "RSE": rse_flag(rse),
+    }
+    df_t66 = build_vertical_table(stats)
+    write_table(
+        ws,
+        f"Tabel 66. Relative Standard Error Jumlah Penduduk Miskin (Wilayah {int(r102_val)})",
+        df_t66,
+    )
+
+write_notes(ws, NOTES)
+
+# ============================================================
+# TABLE 67: Relative Standard Error Persentase Penduduk Miskin (P0)
+# ============================================================
+ws = get_ws("T67_RSE_P0")
+result_rows = []
+
+for r102_val, grp in df_kp43.groupby("r102"):
+    subpop_mask = df_kp43["r102"] == r102_val
+
+    mn = weighted_mean(grp["dmkako"], grp["weind"])
+    se = complex_sample_se_mean(
+        df_full=df_kp43,
+        value_var="dmkako",
+        weight_var="weind",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    stats = {
+        "Estimasi": round(mn, 2),
+        "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+        "Batas Bawah Selang Kepercayaan 95%": round(lower_bound, 2)
+        if pd.notna(lower_bound)
+        else np.nan,
+        "Batas Atas Selang Kepercayaan 95%": round(upper_bound, 2)
+        if pd.notna(upper_bound)
+        else np.nan,
+        "RSE": rse_flag(rse),
+    }
+    df_t67 = build_vertical_table(stats)
+    write_table(
+        ws,
+        f"Tabel 67. Relative Standard Error Persentase Penduduk Miskin (Wilayah {int(r102_val)})",
+        df_t67,
+    )
+
+write_notes(ws, NOTES)
+
+# ============================================================
+# TABLE 68: Relative Standard Error Nilai Indeks Kedalaman
+#           Kemiskinan (P1) Penduduk Miskin
+# ============================================================
+ws = get_ws("T68_RSE_P1")
+
+for r102_val, grp in df_kp43.groupby("r102"):
+    subpop_mask = df_kp43["r102"] == r102_val
+
+    mn = weighted_mean(grp["p1kako"], grp["weind"])
+    se = complex_sample_se_mean(
+        df_full=df_kp43,
+        value_var="p1kako",
+        weight_var="weind",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    stats = {
+        "Estimasi": round(mn, 3),
+        "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+        "Batas Bawah Selang Kepercayaan 95%": round(lower_bound, 3)
+        if pd.notna(lower_bound)
+        else np.nan,
+        "Batas Atas Selang Kepercayaan 95%": round(upper_bound, 3)
+        if pd.notna(upper_bound)
+        else np.nan,
+        "RSE": rse_flag(rse),
+    }
+    df_t68 = build_vertical_table(stats)
+    write_table(
+        ws,
+        f"Tabel 68. Relative Standard Error Nilai Indeks Kedalaman Kemiskinan (P1) (Wilayah {int(r102_val)})",
+        df_t68,
+    )
+
+write_notes(ws, NOTES)
+
+# ============================================================
+# TABLE 69: Relative Standard Error Nilai Indeks Keparahan
+#           Kemiskinan (P2) Penduduk Miskin
+# ============================================================
+ws = get_ws("T69_RSE_P2")
+
+for r102_val, grp in df_kp43.groupby("r102"):
+    subpop_mask = df_kp43["r102"] == r102_val
+
+    mn = weighted_mean(grp["p2kako"], grp["weind"])
+    se = complex_sample_se_mean(
+        df_full=df_kp43,
+        value_var="p2kako",
+        weight_var="weind",
+        subpop_mask=subpop_mask,
+        strata_var="strata",
+        cluster_var="psu",
+    )
+
+    lower_bound = mn - 1.96 * se if pd.notna(se) else np.nan
+    upper_bound = mn + 1.96 * se if pd.notna(se) else np.nan
+    rse = (se / mn * 100) if (mn and mn > 0 and pd.notna(se)) else np.nan
+
+    stats = {
+        "Estimasi": round(mn, 3),
+        "Standard Error": round(se, 4) if pd.notna(se) else np.nan,
+        "Batas Bawah Selang Kepercayaan 95%": round(lower_bound, 3)
+        if pd.notna(lower_bound)
+        else np.nan,
+        "Batas Atas Selang Kepercayaan 95%": round(upper_bound, 3)
+        if pd.notna(upper_bound)
+        else np.nan,
+        "RSE": rse_flag(rse),
+    }
+    df_t69 = build_vertical_table(stats)
+    write_table(
+        ws,
+        f"Tabel 69. Relative Standard Error Nilai Indeks Keparahan Kemiskinan (P2) (Wilayah {int(r102_val)})",
+        df_t69,
+    )
+
+write_notes(ws, NOTES)
 
 # ============================================================
 # CHART DATA: Decile x Water/Sanitation Access (Grafik 1-3)
