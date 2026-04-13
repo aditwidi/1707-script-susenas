@@ -449,6 +449,7 @@ df_rt["katap"] = df_rt["r1606"].apply(recode_atap)
 
 
 # Wall type (moved from r1807 to r1607)
+# Mapping: 1=Tembok, 2=Plesteran Anyaman Bambu/Kawat, 3=Kayu/Papan, 4+=Lainnya
 def recode_dinding(x):
     if x == 1:
         return "Tembok"
@@ -456,8 +457,9 @@ def recode_dinding(x):
         return "Plesteran Anyaman Bambu/Kawat"
     elif x == 3:
         return "Kayu/Papan"
-    else:
-        return "Lainnya"
+    elif x >= 4:
+        return "Lainnya (Anyaman Bambu/batang kayu/bamboo/lainnya)"
+    return np.nan
 
 
 df_rt["kdinding"] = df_rt["r1607"].apply(recode_dinding)
@@ -2136,7 +2138,6 @@ for rk in roof_cats:
         mask = (df_rt["katap"] == rk) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-# Add Total row
 total_row = {"Jenis Atap": "Total"}
 for mk in [0, 1]:
     total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
@@ -2153,7 +2154,7 @@ write_table(ws, "Tabel 47. Persentase Rumah Tangga Menurut Jenis Atap dan Status
 # ============================================================
 
 ws = get_ws("T48_WallType")
-wall_cats = ["Tembok", "Plesteran Anyaman Bambu/Kawat", "Kayu/Papan", "Lainnya"]
+wall_cats = ["Tembok", "Plesteran Anyaman Bambu/Kawat", "Kayu/Papan", "Lainnya (Anyaman Bambu/batang kayu/bamboo/lainnya)"]
 result_rows = []
 for wk in wall_cats:
     row = {"Jenis Dinding": wk}
@@ -2161,13 +2162,16 @@ for wk in wall_cats:
         mask = (df_rt["kdinding"] == wk) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
+total_row = {"Jenis Dinding": "Total"}
+for mk in [0, 1]:
+    total_row[f"N mkako={mk}"] = sum(r[f"N mkako={mk}"] for r in result_rows)
+result_rows.append(total_row)
 df_t48 = pd.DataFrame(result_rows).set_index("Jenis Dinding")
-for col in df_t48.columns:
-    total = df_t48[col].sum()
-    df_t48[col.replace("N ", "% ")] = (df_t48[col] / total * 100).round(2)
-write_table(
-    ws, "Tabel 48. Jenis Dinding Rumah Terluas Menurut Status Kemiskinan", df_t48
-)
+n_cols = ["N mkako=0", "N mkako=1"]
+pct_cols = ["% mkako=0", "% mkako=1"]
+calc_pct_ensure_100(df_t48, n_cols, pct_cols, wall_cats)
+df_t48 = df_t48[cols_order_mk]
+write_table(ws, "Tabel 48. Persentase Rumah Tangga Menurut Jenis Dinding dan Status Miskin", df_t48)
 
 # ============================================================
 # TABLE 49: Floor Type by Poverty
