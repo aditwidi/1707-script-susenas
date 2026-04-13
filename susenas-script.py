@@ -165,12 +165,13 @@ def write_table(ws, title, df, start_row=1):
 print("Loading datasets...")
 df_kp43 = simpledbf.Dbf5(PATH_KP43).to_dataframe()
 df_kp41 = simpledbf.Dbf5(PATH_KP41).to_dataframe()
+df_kp42 = simpledbf.Dbf5(PATH_KP42).to_dataframe()
 df_ind_1 = simpledbf.Dbf5(PATH_IND_1).to_dataframe()
 df_ind_2 = simpledbf.Dbf5(PATH_IND_2).to_dataframe()
 df_rt = simpledbf.Dbf5(PATH_RT).to_dataframe()
 
 # Lowercase all column names first
-for df in [df_kp43, df_kp41, df_ind_1, df_ind_2, df_rt]:
+for df in [df_kp43, df_kp41, df_kp42, df_ind_1, df_ind_2, df_rt]:
     df.columns = df.columns.str.lower()
 
 # Merge IND files horizontally (split due to DBF column limit)
@@ -234,57 +235,15 @@ df_kp43["sharenonfoodkapita"] = df_kp43["nonfoodkapita"] / df_kp43["kapita"] * 1
 df_kp43["dmkako"] = np.where(df_kp43["mkako"] == 1, 100, 0)
 
 # ============================================================
-# FOOD COMMODITY AGGREGATION (kp41 file)
+# FOOD COMMODITY AGGREGATION (kp41 file using klp grouping)
 # ============================================================
 
 print("Processing food commodity data from kp41...")
 
-# Food commodity categories based on KODE range
-# Mapping KODE to 14 food categories as per Susenas standard
-# NOTE: KODE > 197 are non-food items (housing, transport, clothing, etc.) - excluded
-def map_kode_to_category(kode):
-    # Only map KODE 1-197 (food items)
-    if kode > 197:
-        return None
-    if 1 <= kode <= 7:
-        return "Padi-Padian"
-    elif 8 <= kode <= 15:
-        return "Umbi-Umbian"
-    elif 16 <= kode <= 54:
-        return "Ikan/Udang/Cumi/Kerang"
-    elif 55 <= kode <= 64:
-        return "Daging"
-    elif 65 <= kode <= 74:
-        return "Telur dan Susu"
-    elif 75 <= kode <= 101:
-        return "Sayur-Sayuran"
-    elif 102 <= kode <= 109:
-        return "Kacang-Kacangan"
-    elif 110 <= kode <= 125:
-        return "Buah-Buahan"
-    elif 126 <= kode <= 130:
-        return "Minyak dan Kelapa"
-    elif 131 <= kode <= 138:
-        return "Bahan Minuman"
-    elif 139 <= kode <= 153:
-        return "Bumbu-Bumbuan"
-    elif 154 <= kode <= 158:
-        return "Konsumsi Lainnya"
-    elif 159 <= kode <= 191:
-        return "Makanan dan Minuman Jadi"
-    elif 192 <= kode <= 197:
-        return "Rokok"
-    else:
-        return None
-
-# Map KODE to category
-df_kp41["kategori"] = df_kp41["kode"].apply(map_kode_to_category)
-
-# Filter only valid food categories
-df_kp41_food = df_kp41[df_kp41["kategori"].notna()].copy()
+# Filter: klp <> 0 (as per SPSS script)
+df_kp41_food = df_kp41[df_kp41["klp"] != 0].copy()
 
 # Calculate per capita consumption per month: (B41K10 * 30/7) / R301
-# KP41 already has R301 column, so we only need to merge mkako from KP43
 df_kp41_food = pd.merge(
     df_kp41_food,
     df_kp43[["urut", "mkako"]],
@@ -295,10 +254,28 @@ df_kp41_food = pd.merge(
 # Per capita consumption per month (KP41 already has r301)
 df_kp41_food["kons_art"] = (df_kp41_food["b41k10"] * (30 / 7)) / df_kp41_food["r301"]
 
-# Aggregate by household, category, and poverty status (keep weind for weighting)
-# KP41 already has weind column
-food_by_cat = df_kp41_food.groupby(["urut", "kategori", "mkako", "weind"])["kons_art"].sum().reset_index()
-food_by_cat.columns = ["urut", "kategori", "mkako", "weind", "kons_art_sum"]
+# Aggregate by household, klp category, and poverty status (keep weind for weighting)
+food_by_cat = df_kp41_food.groupby(["urut", "klp", "mkako", "weind"])["kons_art"].sum().reset_index()
+food_by_cat.columns = ["urut", "klp", "mkako", "weind", "kons_art_sum"]
+
+# ============================================================
+# NON-FOOD COMMODITY AGGREGATION (kp42 file using klp grouping)
+# ============================================================
+
+print("Processing non-food commodity data from kp42...")
+
+# Filter: klp <> 0 & klp <> 1 & klp <> 2 (as per SPSS script)
+df_kp42_nonfood = df_kp42[(df_kp42["klp"] != 0) & (df_kp42["klp"] != 1) & (df_kp42["klp"] != 2)].copy()
+
+# Calculate per capita monthly consumption: sebulan / r301
+df_kp42_nonfood["kons_art"] = df_kp42_nonfood["sebulan"] / df_kp42_nonfood["r301"]
+
+# Merge mkako from KP43 (KP42 already has weind)
+df_kp42_nonfood = pd.merge(df_kp42_nonfood, df_kp43[["urut", "mkako"]], on="urut", how="left")
+
+# Aggregate by household, klp category, and poverty status
+nonfood_by_cat = df_kp42_nonfood.groupby(["urut", "klp", "mkako", "weind"])["kons_art"].sum().reset_index()
+nonfood_by_cat.columns = ["urut", "klp", "mkako", "weind", "kons_art_sum"]
 
 # ============================================================
 # MERGE POVERTY STATUS TO IND AND RT FILES
@@ -2460,7 +2437,25 @@ write_table(
 
 ws = get_ws("T54_FoodCommodityShare")
 
-# Define category order
+# Mapping klp to category names
+klp_to_category = {
+    1: "Padi-Padian",
+    8: "Umbi-Umbian",
+    16: "Ikan/Udang/Cumi/Kerang",
+    61: "Daging",
+    74: "Telur dan Susu",
+    85: "Sayur-Sayuran",
+    121: "Kacang-Kacangan",
+    129: "Buah-Buahan",
+    154: "Minyak dan Kelapa",
+    159: "Bahan Minuman",
+    167: "Bumbu-Bumbuan",
+    182: "Konsumsi Lainnya",
+    187: "Makanan dan Minuman Jadi",
+    220: "Rokok",
+}
+
+# Define category order (same order as example table)
 food_cats = [
     "Padi-Padian",
     "Umbi-Umbian",
@@ -2483,10 +2478,12 @@ pct_miskin_raw = []  # Store raw percentages for adjustment
 pct_tidak_raw = []
 
 for cat in food_cats:
+    # Find the klp value for this category
+    klp_val = [k for k, v in klp_to_category.items() if v == cat][0]
     row: dict[str, Union[str, int, float]] = {"Kelompok Komoditas Makanan": cat}
 
     # Miskin (mkako=1)
-    grp_miskin = food_by_cat[(food_by_cat["kategori"] == cat) & (food_by_cat["mkako"] == 1)]
+    grp_miskin = food_by_cat[(food_by_cat["klp"] == klp_val) & (food_by_cat["mkako"] == 1)]
     if len(grp_miskin) > 0:
         kons_miskin = (grp_miskin["kons_art_sum"] * grp_miskin["weind"]).sum()
         total_food_miskin = (food_by_cat[food_by_cat["mkako"] == 1]["kons_art_sum"] *
@@ -2497,7 +2494,7 @@ for cat in food_cats:
     pct_miskin_raw.append(pct_raw_miskin)
 
     # Tidak Miskin (mkako=0)
-    grp_tidak = food_by_cat[(food_by_cat["kategori"] == cat) & (food_by_cat["mkako"] == 0)]
+    grp_tidak = food_by_cat[(food_by_cat["klp"] == klp_val) & (food_by_cat["mkako"] == 0)]
     if len(grp_tidak) > 0:
         kons_tidak = (grp_tidak["kons_art_sum"] * grp_tidak["weind"]).sum()
         total_food_tidak = (food_by_cat[food_by_cat["mkako"] == 0]["kons_art_sum"] *
@@ -2553,33 +2550,83 @@ write_table(
 )
 
 # ============================================================
-# TABLE 55: Non-Food Per Capita by Poverty
+# TABLE 55: Non-Food Commodity Share by Poverty
 # ============================================================
 
 ws = get_ws("T55_NonFoodPerCapita")
+
+# Mapping klp to category names
+klp_to_category = {
+    226: "Perumahan dan Fasilitas Rumah Tangga",
+    268: "Aneka Barang dan Jasa",
+    307: "Pakaian, Alas Kaki, dan Tutup Kepala",
+    316: "Barang Tahan Lama",
+    334: "Pajak, Pungutan dan Asuransi",
+    341: "Keperluan Pesta dan Upacara/Kenduri",
+}
+
+# Define category order (same order as example table)
+nonfood_cats = [
+    "Perumahan dan Fasilitas Rumah Tangga",
+    "Aneka Barang dan Jasa",
+    "Pakaian, Alas Kaki, dan Tutup Kepala",
+    "Barang Tahan Lama",
+    "Pajak, Pungutan dan Asuransi",
+    "Keperluan Pesta dan Upacara/Kenduri",
+]
+
 result_rows = []
-for mk in [0, 1]:
-    grp = df_kp43[df_kp43["mkako"] == mk]
-    result_rows.append(
-        {
-            "Status Kemiskinan": "Miskin" if mk == 1 else "Tidak Miskin",
-            "Rata-rata Pengeluaran Non-Makanan per Kapita (Rp)": round(
-                weighted_mean(grp["nonfoodkapita"], grp["weind"]), 0
-            ),
-        }
-    )
-result_rows.append(
-    {
-        "Status Kemiskinan": "Total",
-        "Rata-rata Pengeluaran Non-Makanan per Kapita (Rp)": round(
-            weighted_mean(df_kp43["nonfoodkapita"], df_kp43["weind"]), 0
-        ),
-    }
-)
-df_t55 = pd.DataFrame(result_rows).set_index("Status Kemiskinan")
+pct_miskin_raw = []  # Store raw percentages for adjustment
+pct_tidak_raw = []
+
+for cat in nonfood_cats:
+    # Find the klp value for this category
+    klp_val = [k for k, v in klp_to_category.items() if v == cat][0]
+    row: dict[str, Union[str, int, float]] = {"Kelompok Komoditas Non-Makanan": cat}
+
+    # Miskin (mkako=1)
+    grp_miskin = nonfood_by_cat[(nonfood_by_cat["klp"] == klp_val) & (nonfood_by_cat["mkako"] == 1)]
+    if len(grp_miskin) > 0:
+        kons_miskin = (grp_miskin["kons_art_sum"] * grp_miskin["weind"]).sum()
+        total_nonfood_miskin = (nonfood_by_cat[nonfood_by_cat["mkako"] == 1]["kons_art_sum"] *
+                            nonfood_by_cat[nonfood_by_cat["mkako"] == 1]["weind"]).sum()
+        pct_raw_miskin = kons_miskin / total_nonfood_miskin * 100 if total_nonfood_miskin > 0 else 0.0
+    else:
+        pct_raw_miskin = 0.0
+    pct_miskin_raw.append(pct_raw_miskin)
+
+    # Tidak Miskin (mkako=0)
+    grp_tidak = nonfood_by_cat[(nonfood_by_cat["klp"] == klp_val) & (nonfood_by_cat["mkako"] == 0)]
+    if len(grp_tidak) > 0:
+        kons_tidak = (grp_tidak["kons_art_sum"] * grp_tidak["weind"]).sum()
+        total_nonfood_tidak = (nonfood_by_cat[nonfood_by_cat["mkako"] == 0]["kons_art_sum"] *
+                           nonfood_by_cat[nonfood_by_cat["mkako"] == 0]["weind"]).sum()
+        pct_raw_tidak = kons_tidak / total_nonfood_tidak * 100 if total_nonfood_tidak > 0 else 0.0
+    else:
+        pct_raw_tidak = 0.0
+    pct_tidak_raw.append(pct_raw_tidak)
+
+    result_rows.append(row)
+
+# Adjust percentages to ensure sum = 100 (reuse the function from Table 54)
+pct_miskin_adj = adjust_percentages(pct_miskin_raw)
+pct_tidak_adj = adjust_percentages(pct_tidak_raw)
+
+# Apply adjusted percentages to result_rows
+for i, row in enumerate(result_rows):
+    row["Miskin (%)"] = pct_miskin_adj[i]
+    row["Tidak Miskin (%)"] = pct_tidak_adj[i]
+
+# Add Total row
+total_row: dict[str, Union[str, int, float]] = {"Kelompok Komoditas Non-Makanan": "Total"}
+total_row["Miskin (%)"] = 100.00
+total_row["Tidak Miskin (%)"] = 100.00
+result_rows.append(total_row)
+
+df_t55 = pd.DataFrame(result_rows).set_index("Kelompok Komoditas Non-Makanan")
 write_table(
     ws,
-    "Tabel 55. Rata-rata Pengeluaran Non-Makanan per Kapita Menurut Status Kemiskinan",
+    "Tabel 55. Persentase Rata-Rata Pengeluaran Perkapita Perbulan Menurut Kelompok Komoditas Non Makanan dan Status Miskin",
     df_t55,
 )
 
