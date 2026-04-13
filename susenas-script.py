@@ -2663,10 +2663,11 @@ for label, pct in zip(labels, adj_pcts):
     }
     result_rows.append(row)
 
-# Add Total row
+# Add Total row (sum of adjusted percentages)
+total_pct = round(sum(adj_pcts), 2)
 total_row: dict[str, Union[str, int, float]] = {
     "Apakah Pernah Menjadi Penerima PKH dalam Setahun Terakhir ?": "Total",
-    "Persentase": 100.00,
+    "Persentase": total_pct,
 }
 result_rows.append(total_row)
 
@@ -2678,22 +2679,52 @@ write_table(
 )
 
 # ============================================================
-# TABLE 57: BPNT/Sembako Recipient (r2005) by Poverty
+# TABLE 57: Persentase Rumah Tangga Miskin yang Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako)
 # ============================================================
 
 ws = get_ws("T57_BPNT")
 result_rows = []
-for r2005_val in sorted(df_rt["r2005"].dropna().unique()):
-    row: dict[str, Union[str, int, float]] = {"Penerima BPNT/Sembako": int(r2005_val)}
-    for mk in [0, 1]:
-        mask = (df_rt["r2005"] == r2005_val) & (df_rt["mkako"] == mk)
-        row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
+
+# Filter only poor households (mkako = 1)
+poor_households = df_rt[df_rt["mkako"] == 1]
+
+# Calculate weighted count for each r2005 value
+total_weight = poor_households["fwt"].sum()
+raw_pcts = []
+labels = []
+for r2005_val in sorted(poor_households["r2005"].dropna().unique()):
+    mask = poor_households["r2005"] == r2005_val
+    n_weighted = poor_households.loc[mask, "fwt"].sum()
+    pct_raw = n_weighted / total_weight * 100 if total_weight > 0 else 0.0
+    raw_pcts.append(pct_raw)
+    # Map r2005 values to labels (1=Ya, 5=Tidak based on Susenas coding)
+    label = "Ya" if r2005_val == 1 else "Tidak" if r2005_val == 5 else str(int(r2005_val))
+    labels.append(label)
+
+# Adjust percentages to ensure sum = 100
+adj_pcts = adjust_percentages(raw_pcts)
+
+for label, pct in zip(labels, adj_pcts):
+    row: dict[str, Union[str, int, float]] = {
+        "Apakah Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako) ?": label,
+        "Persentase": pct,
+    }
     result_rows.append(row)
-df_t57 = pd.DataFrame(result_rows).set_index("Penerima BPNT/Sembako")
-for col in df_t57.columns:
-    total = df_t57[col].sum()
-    df_t57[col.replace("N ", "% ")] = (df_t57[col] / total * 100).round(2)
-write_table(ws, "Tabel 57. Penerima BPNT/Sembako Menurut Status Kemiskinan", df_t57)
+
+# Add Total row (sum of adjusted percentages)
+total_pct = round(sum(adj_pcts), 2)
+total_row: dict[str, Union[str, int, float]] = {
+    "Apakah Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako) ?": "Total",
+    "Persentase": total_pct,
+}
+result_rows.append(total_row)
+
+df_t57 = pd.DataFrame(result_rows).set_index("Apakah Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako) ?")
+write_table(
+    ws,
+    "Tabel 57. Persentase Rumah Tangga Miskin yang Pernah Menerima Bantuan Pangan (Bantuan Pangan Non Tunai/Program Sembako)",
+    df_t57,
+)
 
 # ============================================================
 # TABLE 58-59: APS with Standard Error (Complex Sample Approximation)
