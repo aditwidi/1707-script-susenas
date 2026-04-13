@@ -491,7 +491,7 @@ def recode_listrik(x):
     elif x == 3:
         return "Listrik Non PLN"
     elif x == 4:
-        return "Bukan listrik"
+        return "Bukan Listrik"
     return np.nan
 
 
@@ -2214,19 +2214,42 @@ write_table(
 # ============================================================
 
 ws = get_ws("T50_Electricity")
-elec_cats = ["Listrik PLN", "Listrik Non PLN", "Bukan listrik"]
+elec_cats = ["Listrik PLN", "Listrik Non PLN", "Bukan Listrik"]
 result_rows = []
 for ek in elec_cats:
-    row: dict[str, Union[str, int, float]] = {"Sumber Penerangan": ek}
+    row: dict[str, Union[str, int, float]] = {"Sumber Penerangan Rumah": ek}
     for mk in [0, 1]:
         mask = (df_rt["klistrik"] == ek) & (df_rt["mkako"] == mk)
         row[f"N mkako={int(mk)}"] = round(df_rt.loc[mask, "fwt"].sum(), 0)
     result_rows.append(row)
-df_t50 = pd.DataFrame(result_rows).set_index("Sumber Penerangan")
-for col in df_t50.columns:
-    total = df_t50[col].sum()
-    df_t50[col.replace("N ", "% ")] = (df_t50[col] / total * 100).round(2)
-write_table(ws, "Tabel 50. Sumber Penerangan Utama Menurut Status Kemiskinan", df_t50)
+# Add Total row
+total_row: dict[str, Union[str, int, float]] = {"Sumber Penerangan Rumah": "Total"}
+for mk in [0, 1]:
+    total_row[f"N mkako={int(mk)}"] = sum(r[f"N mkako={int(mk)}"] for r in result_rows)
+result_rows.append(total_row)
+df_t50 = pd.DataFrame(result_rows).set_index("Sumber Penerangan Rumah")
+# Calculate percentages column-wise (each column sums to 100)
+for mk in [0, 1]:
+    n_col = f"N mkako={int(mk)}"
+    total_n = df_t50.loc["Total", n_col]
+    pct_col = f"% mkako={int(mk)}"
+    if total_n > 0:
+        # Calculate for all rows except Total
+        pct_sum = 0
+        for idx in elec_cats[:-1]:  # All except last category
+            pct = round(df_t50.loc[idx, n_col] / total_n * 100, 2)
+            df_t50.loc[idx, pct_col] = pct
+            pct_sum += pct
+        # Assign remainder to last category to ensure sum = 100
+        df_t50.loc[elec_cats[-1], pct_col] = round(100 - pct_sum, 2)
+    else:
+        for idx in elec_cats:
+            df_t50.loc[idx, pct_col] = 0.00
+    df_t50.loc["Total", pct_col] = 100.00
+# Reorder columns: Miskin (mkako=1) first, then Tidak Miskin (mkako=0)
+cols_order = ["N mkako=1", "N mkako=0", "% mkako=1", "% mkako=0"]
+df_t50 = df_t50[cols_order]
+write_table(ws, "Tabel 50. Persentase Rumah Tangga Menurut Sumber Penerangan dan Status Kemiskinan", df_t50)
 
 # ============================================================
 # TABLE 51-53: Food/Non-food Share by Gender and Poverty
